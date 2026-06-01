@@ -7,434 +7,188 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="FitLog">
 <title>FitLog</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-html, body { height: 100%; background: #fff; overscroll-behavior: none; }
-body {
-  font-family: 'Inter', -apple-system, sans-serif;
-  background: #fff;
-  color: #1a1a1a;
-  max-width: 430px;
-  margin: 0 auto;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:#fff;overscroll-behavior:none}
+body{font-family:'Inter',-apple-system,sans-serif;background:#fff;color:#1a1a1a;max-width:430px;margin:0 auto;height:100%;display:flex;flex-direction:column;overflow:hidden}
 
-/* ── SETUP ── */
-#setup-screen {
-  position: fixed; inset: 0; z-index: 200;
-  background: #fff;
-  display: flex; flex-direction: column;
-  padding: 0;
-  overflow-y: auto;
-}
-#setup-screen.hidden { display: none; }
-.setup-hero {
-  background: #1a1a1a;
-  padding: 52px 28px 36px;
-  color: #fff;
-}
-.setup-wordmark {
-  font-size: 13px; font-weight: 600;
-  letter-spacing: 0.18em; text-transform: uppercase;
-  color: #999; margin-bottom: 12px;
-}
-.setup-title {
-  font-size: 34px; font-weight: 800;
-  line-height: 1.1; color: #fff;
-}
-.setup-title span { color: #4ade80; }
-.setup-body { padding: 28px 24px 40px; display: flex; flex-direction: column; gap: 20px; }
-.setup-field { display: flex; flex-direction: column; gap: 7px; }
-.setup-label {
-  font-size: 12px; font-weight: 600;
-  letter-spacing: 0.06em; text-transform: uppercase;
-  color: #8a8a8a;
-}
-.setup-input {
-  background: #f4f4f4;
-  border: none; border-radius: 12px;
-  padding: 14px 16px;
-  font-family: inherit; font-size: 15px; color: #1a1a1a;
-  outline: none; width: 100%;
-  transition: background 0.15s;
-}
-.setup-input:focus { background: #ebebeb; }
-.setup-input::placeholder { color: #b0b0b0; }
-.setup-select {
-  background: #f4f4f4;
-  border: none; border-radius: 12px;
-  padding: 14px 16px;
-  font-family: inherit; font-size: 15px; color: #1a1a1a;
-  outline: none; width: 100%; appearance: none; cursor: pointer;
-}
-.setup-help {
-  font-size: 13px; color: #8a8a8a; line-height: 1.5;
-}
-.setup-help a { color: #1a1a1a; font-weight: 500; }
-.btn-black {
-  background: #1a1a1a; color: #fff;
-  border: none; border-radius: 14px;
-  padding: 16px; width: 100%;
-  font-family: inherit; font-size: 16px; font-weight: 700;
-  cursor: pointer; transition: opacity 0.15s;
-}
-.btn-black:active { opacity: 0.75; }
+/* SETUP */
+#setup{position:fixed;inset:0;z-index:200;background:#fff;overflow-y:auto;display:flex;flex-direction:column}
+#setup.hidden{display:none}
+.setup-hero{background:#1a1a1a;padding:56px 28px 36px;color:#fff;flex-shrink:0}
+.setup-eyebrow{font-size:12px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:#555;margin-bottom:10px}
+.setup-title{font-size:38px;font-weight:800;color:#fff;line-height:1}
+.setup-title span{color:#4ade80}
+.setup-body{padding:28px 24px 48px;display:flex;flex-direction:column;gap:18px}
+.setup-field{display:flex;flex-direction:column;gap:7px}
+.setup-label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#888}
+.setup-input{background:#f4f4f4;border:none;border-radius:12px;padding:14px 16px;font-family:inherit;font-size:15px;color:#1a1a1a;outline:none;width:100%;transition:background .15s}
+.setup-input:focus{background:#ebebeb}
+.setup-input::placeholder{color:#bbb}
+.setup-select{background:#f4f4f4;border:none;border-radius:12px;padding:14px 16px;font-family:inherit;font-size:15px;color:#1a1a1a;outline:none;width:100%;appearance:none;cursor:pointer}
+.setup-help{font-size:13px;color:#888;line-height:1.55}
+.setup-help a{color:#1a1a1a;font-weight:600}
+.setup-divider{height:1px;background:#f0f0f0}
+.btn-black{background:#1a1a1a;color:#fff;border:none;border-radius:14px;padding:16px;width:100%;font-family:inherit;font-size:16px;font-weight:700;cursor:pointer;transition:opacity .15s}
+.btn-black:active{opacity:.75}
 
-/* ── LAYOUT ── */
-#app-content {
-  flex: 1; overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  background: #f9f9f9;
-}
-#app-content::-webkit-scrollbar { display: none; }
+/* LAYOUT */
+#content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#f5f5f5;display:none}
+#content::-webkit-scrollbar{display:none}
+#nav{flex-shrink:0;background:#fff;border-top:1px solid #f0f0f0;display:none;padding:8px 0 env(safe-area-inset-bottom,16px)}
+.nav-bar{display:flex}
+.nav-tab{flex:1;background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 4px;cursor:pointer;color:#b8b8b8;font-family:inherit;font-size:10px;font-weight:500;transition:color .15s}
+.nav-tab svg{width:22px;height:22px}
+.nav-tab.active{color:#1a1a1a}
 
-/* ── NAV ── */
-#app-nav {
-  flex-shrink: 0;
-  background: #fff;
-  border-top: 1px solid #f0f0f0;
-  display: none;
-  padding: 8px 0 20px;
-}
-.nav-bar { display: flex; }
-.nav-tab {
-  flex: 1;
-  background: none; border: none;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 6px 4px;
-  cursor: pointer;
-  color: #b0b0b0;
-  font-family: inherit; font-size: 10px; font-weight: 500;
-  transition: color 0.15s;
-}
-.nav-tab svg { width: 22px; height: 22px; }
-.nav-tab.active { color: #1a1a1a; }
+/* SCREENS */
+.screen{display:none}
+.screen.active{display:block}
 
-/* ── SCREENS ── */
-.screen { display: none; }
-.screen.active { display: block; }
+/* PAGE HEADER */
+.page-hdr{background:#fff;padding:20px 20px 4px}
+.page-eyebrow{font-size:12px;font-weight:500;color:#c0c0c0;margin-bottom:3px}
+.page-title{font-size:34px;font-weight:800;color:#d0d0d0;letter-spacing:-.5px;margin-bottom:14px}
+.page-title.dark{color:#1a1a1a}
 
-/* ── PAGE HEADERS (like "PRs", "Note") ── */
-.page-header {
-  background: #fff;
-  padding: 20px 20px 0;
-}
-.page-eyebrow {
-  font-size: 13px; font-weight: 500; color: #c0c0c0;
-  margin-bottom: 4px;
-}
-.page-title {
-  font-size: 36px; font-weight: 800;
-  color: #c8c8c8; letter-spacing: -0.5px;
-  margin-bottom: 16px;
-}
-.page-title.dark { color: #1a1a1a; }
+/* SECTION LABEL */
+.sec-lbl{padding:14px 20px 8px;font-size:13px;font-weight:700;color:#1a1a1a;background:#f5f5f5}
 
-/* ── SEGMENT TABS (like Lift / Gym / Cardio) ── */
-.seg-row {
-  display: flex; gap: 6px; flex-wrap: nowrap;
-  overflow-x: auto; padding: 0 20px 16px;
-  background: #fff;
-  -webkit-overflow-scrolling: touch;
-}
-.seg-row::-webkit-scrollbar { display: none; }
-.seg-tab {
-  background: none; border: none;
-  padding: 8px 16px;
-  border-radius: 50px;
-  font-family: inherit; font-size: 14px; font-weight: 500;
-  color: #b0b0b0; cursor: pointer; white-space: nowrap;
-  transition: all 0.15s;
-}
-.seg-tab.active {
-  background: #1a1a1a; color: #fff;
-}
+/* WHITE CARD */
+.wcard{background:#fff;border-radius:16px;padding:16px 18px;margin:0 16px 10px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.wcard-title{font-size:16px;font-weight:700;color:#1a1a1a;margin-bottom:3px}
+.wcard-sub{font-size:13px;color:#888;line-height:1.45}
 
-/* ── PILL TABS (colored, like Girls/Heroes/Open) ── */
-.pill-row {
-  display: flex; gap: 8px; flex-wrap: nowrap;
-  overflow-x: auto; padding: 0 20px 16px;
-  background: #fff;
-  -webkit-overflow-scrolling: touch;
-}
-.pill-row::-webkit-scrollbar { display: none; }
-.pill-tab {
-  padding: 8px 18px; border-radius: 50px; border: none;
-  font-family: inherit; font-size: 14px; font-weight: 600;
-  cursor: pointer; white-space: nowrap; transition: opacity 0.15s;
-}
-.pill-tab:active { opacity: 0.75; }
+/* SESSION HERO */
+.sess-hero{background:#1a1a1a;margin:16px 16px 10px;border-radius:18px;padding:20px 20px 18px;color:#fff}
+.sess-day{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#555;margin-bottom:6px}
+.sess-name{font-size:22px;font-weight:800;color:#fff;line-height:1.1;margin-bottom:8px}
+.sess-meta{font-size:13px;color:#777}
+.sess-meta span{color:#4ade80;font-weight:600}
 
-/* ── DIVIDER LISTS ── */
-.list-section { background: #fff; margin: 0; }
-.list-section-label {
-  padding: 20px 20px 8px;
-  font-size: 18px; font-weight: 700; color: #1a1a1a;
-  display: flex; align-items: center; gap: 8px;
-}
-.list-dot {
-  width: 8px; height: 8px; border-radius: 50%; background: #ff3b30;
-  display: inline-block; flex-shrink: 0;
-}
-.list-item {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 15px 20px;
-  border-top: 1px solid #f0f0f0;
-  font-size: 15px; font-weight: 500; color: #1a1a1a;
-  cursor: pointer; background: #fff;
-  transition: background 0.1s;
-}
-.list-item:active { background: #f9f9f9; }
-.list-item-sub { font-size: 13px; color: #8a8a8a; font-weight: 400; margin-top: 1px; }
-.list-chevron { color: #c8c8c8; font-size: 16px; }
+/* HRV BANNER */
+.hrv-ban{margin:0 16px 10px;background:#fff5f5;border-radius:14px;padding:14px 16px;border-left:4px solid #ff3b30}
+.hrv-title{font-size:13px;font-weight:700;color:#ff3b30;margin-bottom:2px}
+.hrv-text{font-size:12px;color:#888;line-height:1.4}
 
-/* ── CARDS (white rounded) ── */
-.wcard {
-  background: #fff;
-  border-radius: 16px;
-  padding: 16px 18px;
-  margin: 0 16px 10px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-}
-.wcard-title {
-  font-size: 16px; font-weight: 700; color: #1a1a1a;
-  margin-bottom: 4px;
-}
-.wcard-sub { font-size: 13px; color: #8a8a8a; line-height: 1.4; }
+/* EXERCISE ITEMS */
+.ex-lbl{padding:14px 20px 8px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#aaa;background:#f5f5f5}
+.ex-item{background:#fff;margin:0 16px 8px;border-radius:14px;padding:14px 16px;display:flex;align-items:flex-start;gap:12px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.ex-num{font-size:11px;font-weight:700;color:#ccc;min-width:20px;padding-top:2px}
+.ex-body{flex:1}
+.ex-name{font-size:15px;font-weight:700;color:#1a1a1a;margin-bottom:6px}
+.ex-pills{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:4px}
+.ex-pill{background:#f4f4f4;border-radius:50px;padding:3px 10px;font-size:12px;font-weight:600;color:#444}
+.ex-pill.g{background:#f0fdf4;color:#16a34a}
+.ex-note{font-size:12px;color:#888;line-height:1.4;margin-top:4px}
+.ex-chk{width:26px;height:26px;border-radius:50%;border:2px solid #e0e0e0;background:#fff;cursor:pointer;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.ex-chk.done{background:#1a1a1a;border-color:#1a1a1a}
+.ex-chk.done::after{content:'✓';color:#fff;font-size:12px;font-weight:700}
 
-/* ── STAT GRID ── */
-.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 16px; margin-bottom: 10px; }
-.stat-card { background: #fff; border-radius: 16px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-.stat-val { font-size: 28px; font-weight: 800; color: #1a1a1a; line-height: 1; }
-.stat-val span { font-size: 14px; font-weight: 400; color: #8a8a8a; }
-.stat-lbl { font-size: 11px; font-weight: 500; color: #8a8a8a; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.07em; }
+/* LOG FORM */
+.log-wrap{padding:4px 16px 40px;background:#f5f5f5}
+.f-field{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}
+.f-lbl{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#888}
+.f-inp{background:#fff;border:none;border-radius:12px;padding:14px 16px;font-family:inherit;font-size:15px;color:#1a1a1a;outline:none;width:100%;box-shadow:0 1px 3px rgba(0,0,0,.06);transition:box-shadow .15s}
+.f-inp:focus{box-shadow:0 0 0 2px #1a1a1a}
+.f-inp::placeholder{color:#c0c0c0}
+.f-row{display:flex;gap:10px}
+.f-row .f-field{flex:1}
+.f-ta{resize:none;min-height:88px;line-height:1.5}
+.btn-cta{background:#1a1a1a;color:#fff;border:none;border-radius:14px;padding:16px;font-family:inherit;font-size:16px;font-weight:700;cursor:pointer;width:100%;margin-top:4px;transition:opacity .15s}
+.btn-cta:active{opacity:.75}
+.btn-outline{background:#fff;color:#1a1a1a;border:1.5px solid #e8e8e8;border-radius:14px;padding:14px;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;width:100%;margin-top:8px}
 
-/* ── TODAY SESSION ── */
-.session-hero {
-  background: #1a1a1a;
-  margin: 16px 16px 10px;
-  border-radius: 18px;
-  padding: 20px;
-  color: #fff;
-}
-.session-hero-day { font-size: 12px; font-weight: 600; color: #666; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px; }
-.session-hero-name { font-size: 24px; font-weight: 800; color: #fff; line-height: 1.1; margin-bottom: 8px; }
-.session-hero-meta { font-size: 13px; color: #999; }
-.session-hero-meta span { color: #4ade80; font-weight: 600; }
+/* CALENDAR */
+.cal-card{background:#fff;border-radius:16px;margin:0 16px 10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.cal-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.cal-mo{font-size:15px;font-weight:700;color:#1a1a1a}
+.cal-btn{background:#f4f4f4;border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;color:#1a1a1a}
+.dow-row{display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:4px}
+.dow{font-size:10px;font-weight:600;color:#ccc;text-align:center;padding:2px 0}
+.day-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.cal-day{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:12px;color:#888;border-radius:50%}
+.cal-day.hw{background:#f0fdf4;color:#16a34a;font-weight:600}
+.cal-day.td{background:#1a1a1a;color:#fff;font-weight:700}
+.cal-day.em{opacity:0}
 
-/* ── HRV BANNER ── */
-.hrv-banner {
-  margin: 0 16px 10px;
-  background: #fff0f0;
-  border-radius: 14px;
-  padding: 14px 16px;
-  border-left: 4px solid #ff3b30;
-}
-.hrv-banner-title { font-size: 14px; font-weight: 700; color: #ff3b30; margin-bottom: 3px; }
-.hrv-banner-text { font-size: 13px; color: #8a8a8a; line-height: 1.4; }
+/* HISTORY */
+.hist-item{background:#fff;border-radius:14px;margin:0 16px 8px;padding:14px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.hdot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.hdot.c{background:#22c55e}
+.hdot.p{background:#f59e0b}
+.hdot.s{background:#ef4444}
+.hinfo{flex:1}
+.hname{font-size:15px;font-weight:600;color:#1a1a1a}
+.hmeta{font-size:12px;color:#888;margin-top:1px}
+.hbadge{font-size:11px;font-weight:700;padding:3px 10px;border-radius:50px}
+.hbadge.c{background:#f0fdf4;color:#16a34a}
+.hbadge.p{background:#fffbeb;color:#d97706}
+.hbadge.s{background:#fef2f2;color:#dc2626}
 
-/* ── EXERCISE ROWS ── */
-.ex-section-label {
-  padding: 16px 20px 8px;
-  font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
-  color: #8a8a8a; background: #f9f9f9;
-}
-.ex-item {
-  background: #fff;
-  margin: 0 16px 8px;
-  border-radius: 14px;
-  padding: 14px 16px;
-  display: flex; align-items: flex-start; gap: 14px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-.ex-num {
-  font-size: 12px; font-weight: 700; color: #c8c8c8;
-  min-width: 20px; padding-top: 2px;
-}
-.ex-body { flex: 1; }
-.ex-name { font-size: 15px; font-weight: 700; color: #1a1a1a; margin-bottom: 6px; }
-.ex-pills { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; }
-.ex-pill {
-  background: #f4f4f4; border-radius: 50px;
-  padding: 3px 10px;
-  font-size: 12px; font-weight: 600; color: #444;
-}
-.ex-pill.green { background: #e8faf0; color: #16a34a; }
-.ex-note { font-size: 12px; color: #8a8a8a; line-height: 1.4; margin-top: 4px; }
-.ex-check {
-  width: 26px; height: 26px; border-radius: 50%;
-  border: 2px solid #e0e0e0; background: #fff;
-  cursor: pointer; flex-shrink: 0; margin-top: 2px;
-  display: flex; align-items: center; justify-content: center;
-  transition: all 0.2s;
-}
-.ex-check.done { background: #1a1a1a; border-color: #1a1a1a; }
-.ex-check.done::after { content: '✓'; color: #fff; font-size: 13px; font-weight: 700; }
+/* PROGRESS */
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 16px;margin-bottom:10px}
+.stat-card{background:#fff;border-radius:16px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.stat-val{font-size:28px;font-weight:800;color:#1a1a1a;line-height:1}
+.stat-val span{font-size:13px;font-weight:400;color:#888}
+.stat-lbl{font-size:10px;font-weight:700;color:#aaa;margin-top:4px;text-transform:uppercase;letter-spacing:.08em}
+.bar-chart{display:flex;align-items:flex-end;gap:6px;height:72px}
+.bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%}
+.bar{width:100%;background:#1a1a1a;border-radius:4px 4px 0 0;min-height:3px;transition:height .4s}
+.bar-lbl{font-size:9px;color:#bbb;font-weight:500}
+.phase-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.pchip{padding:5px 12px;border-radius:50px;font-size:12px;font-weight:600;background:#f4f4f4;color:#888}
+.pchip.active{background:#1a1a1a;color:#fff}
 
-/* ── LOG FORM ── */
-.log-wrap { padding: 0 16px 32px; background: #f9f9f9; }
-.form-field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
-.form-lbl { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #8a8a8a; }
-.form-inp {
-  background: #fff; border: none; border-radius: 12px;
-  padding: 14px 16px;
-  font-family: inherit; font-size: 15px; color: #1a1a1a;
-  outline: none; width: 100%;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-  transition: box-shadow 0.15s;
-}
-.form-inp:focus { box-shadow: 0 0 0 2px #1a1a1a; }
-.form-inp::placeholder { color: #c0c0c0; }
-.form-row { display: flex; gap: 10px; }
-.form-row .form-field { flex: 1; }
-.form-textarea { resize: none; min-height: 90px; line-height: 1.5; }
-.btn-cta {
-  background: #1a1a1a; color: #fff;
-  border: none; border-radius: 14px; padding: 16px;
-  font-family: inherit; font-size: 16px; font-weight: 700;
-  cursor: pointer; width: 100%; margin-top: 4px;
-  transition: opacity 0.15s;
-}
-.btn-cta:active { opacity: 0.75; }
-.btn-outline {
-  background: #fff; color: #1a1a1a;
-  border: 1.5px solid #e8e8e8; border-radius: 14px; padding: 14px;
-  font-family: inherit; font-size: 15px; font-weight: 600;
-  cursor: pointer; width: 100%; margin-top: 8px;
-  transition: border-color 0.15s;
-}
+/* SETTINGS */
+.s-section{background:#fff;margin:0 16px 10px;border-radius:16px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.s-row{display:flex;justify-content:space-between;align-items:center;padding:15px 18px;border-bottom:1px solid #f4f4f4}
+.s-row:last-child{border-bottom:none}
+.s-key{font-size:15px;font-weight:500;color:#1a1a1a}
+.s-val{font-size:14px;color:#888}
+.s-link{font-size:14px;color:#1a1a1a;font-weight:500;text-decoration:none}
 
-/* ── CALENDAR ── */
-.cal-wrap { background: #fff; margin: 0 16px 10px; border-radius: 16px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-.cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-.cal-month-lbl { font-size: 16px; font-weight: 700; color: #1a1a1a; }
-.cal-nav-btn { background: #f4f4f4; border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; color: #1a1a1a; }
-.cal-dow-row { display: grid; grid-template-columns: repeat(7,1fr); margin-bottom: 4px; }
-.cal-dow { font-size: 11px; font-weight: 600; color: #c0c0c0; text-align: center; padding: 2px 0; }
-.cal-days { display: grid; grid-template-columns: repeat(7,1fr); gap: 2px; }
-.cal-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #8a8a8a; border-radius: 50%; }
-.cal-day.has-w { background: #f0fdf4; color: #16a34a; font-weight: 600; }
-.cal-day.today { background: #1a1a1a; color: #fff; font-weight: 700; }
-.cal-day.empty { opacity: 0; }
+/* LOADING */
+.loading{display:flex;flex-direction:column;align-items:center;gap:12px;padding:56px 24px}
+.loader{width:26px;height:26px;border:2px solid #f0f0f0;border-top-color:#1a1a1a;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading p{font-size:13px;color:#aaa}
 
-/* ── HISTORY LIST ── */
-.history-item {
-  background: #fff; border-radius: 14px;
-  margin: 0 16px 8px; padding: 14px 16px;
-  display: flex; align-items: center; gap: 14px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-.history-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.history-dot.complete { background: #22c55e; }
-.history-dot.planned  { background: #f59e0b; }
-.history-dot.skipped  { background: #ef4444; }
-.history-info { flex: 1; }
-.history-name { font-size: 15px; font-weight: 600; color: #1a1a1a; }
-.history-meta { font-size: 12px; color: #8a8a8a; margin-top: 2px; }
-.history-badge {
-  font-size: 11px; font-weight: 700;
-  padding: 3px 10px; border-radius: 50px;
-}
-.history-badge.complete { background: #f0fdf4; color: #16a34a; }
-.history-badge.planned  { background: #fffbeb; color: #d97706; }
-.history-badge.skipped  { background: #fef2f2; color: #dc2626; }
+/* STATUS BAR */
+#nbar{background:#f9f9f9;border-bottom:1px solid #efefef;padding:5px 16px;display:none;align-items:center;gap:6px;font-size:11px;color:#aaa;font-weight:500;flex-shrink:0}
+.ndot{width:6px;height:6px;border-radius:50%;background:#ccc;flex-shrink:0}
+.ndot.ok{background:#22c55e}
+.ndot.err{background:#ef4444}
 
-/* ── PROGRESS ── */
-.bar-chart { display: flex; align-items: flex-end; gap: 6px; height: 72px; }
-.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; }
-.bar { width: 100%; background: #1a1a1a; border-radius: 4px 4px 0 0; min-height: 3px; transition: height 0.4s; }
-.bar-lbl { font-size: 9px; color: #b0b0b0; font-weight: 500; }
+/* TOAST */
+#toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(10px);background:#1a1a1a;color:#fff;border-radius:50px;padding:10px 20px;font-size:13px;font-weight:600;opacity:0;transition:all .25s;pointer-events:none;z-index:300;white-space:nowrap}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.ok{background:#16a34a}
+#toast.err{background:#dc2626}
 
-.phase-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-.phase-chip {
-  padding: 5px 12px; border-radius: 50px;
-  font-size: 12px; font-weight: 600;
-  background: #f4f4f4; color: #8a8a8a;
-}
-.phase-chip.active { background: #1a1a1a; color: #fff; }
-
-/* ── SETTINGS ── */
-.settings-section { background: #fff; margin: 0 16px 10px; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-.settings-row {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 15px 18px;
-  border-bottom: 1px solid #f4f4f4;
-}
-.settings-row:last-child { border-bottom: none; }
-.settings-key { font-size: 15px; font-weight: 500; color: #1a1a1a; }
-.settings-val { font-size: 14px; color: #8a8a8a; }
-.settings-link { font-size: 14px; color: #1a1a1a; font-weight: 500; text-decoration: none; }
-
-/* ── LOADING ── */
-.loading-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 56px 24px; }
-.loader { width: 28px; height: 28px; border: 2px solid #f0f0f0; border-top-color: #1a1a1a; border-radius: 50%; animation: spin 0.7s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.loading-wrap p { font-size: 14px; color: #8a8a8a; }
-
-/* ── NOTION STATUS ── */
-#notion-bar {
-  background: #f9f9f9; border-bottom: 1px solid #f0f0f0;
-  padding: 6px 16px;
-  display: none;
-  align-items: center; gap: 6px;
-  font-size: 11px; color: #8a8a8a; font-weight: 500;
-}
-.notion-dot { width: 6px; height: 6px; border-radius: 50%; background: #c0c0c0; flex-shrink: 0; }
-.notion-dot.ok  { background: #22c55e; }
-.notion-dot.err { background: #ef4444; }
-
-/* ── TOAST ── */
-#toast {
-  position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%) translateY(10px);
-  background: #1a1a1a; color: #fff;
-  border-radius: 50px; padding: 10px 20px;
-  font-size: 13px; font-weight: 600;
-  opacity: 0; transition: all 0.25s;
-  pointer-events: none; z-index: 300; white-space: nowrap;
-}
-#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-#toast.ok  { background: #16a34a; }
-#toast.err { background: #dc2626; }
-
-/* ── SECTION SPACER ── */
-.spacer { height: 12px; background: #f9f9f9; }
-.section-lbl { padding: 16px 20px 8px; font-size: 18px; font-weight: 700; color: #1a1a1a; background: #f9f9f9; }
-
-/* ── NOTION LINK BUTTON ── */
-.notion-link-btn {
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-  margin: 0 16px 10px;
-  background: #fff; border-radius: 14px; padding: 14px;
-  font-size: 14px; font-weight: 600; color: #1a1a1a; text-decoration: none;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-}
-
-/* ── SCROLL AREA ── */
-#app-content { background: #f9f9f9; }
+/* NOTION LINK */
+.notion-link{display:flex;align-items:center;justify-content:center;gap:6px;margin:0 16px 10px;background:#fff;border-radius:14px;padding:14px;font-size:14px;font-weight:600;color:#1a1a1a;text-decoration:none;box-shadow:0 1px 3px rgba(0,0,0,.06)}
 </style>
 </head>
 <body>
 
 <!-- SETUP -->
-<div id="setup-screen">
+<div id="setup">
   <div class="setup-hero">
-    <div class="setup-wordmark">Cocodona 250</div>
+    <div class="setup-eyebrow">Cocodona 250</div>
     <div class="setup-title">FitLog<span>.</span></div>
   </div>
   <div class="setup-body">
     <div class="setup-field">
-      <div class="setup-label">Notion Integration Token</div>
-      <input type="password" class="setup-input" id="setup-token" placeholder="secret_xxxxxxxxxxxxxxxx" autocomplete="off">
-      <div class="setup-help">Go to <a href="https://www.notion.so/my-integrations" target="_blank">notion.so/my-integrations</a> → New Integration → copy the token. Then share your Cocodona 250 page with the integration.</div>
+      <div class="setup-label">Anthropic API Key</div>
+      <input type="password" class="setup-input" id="s-key" placeholder="sk-ant-…" autocomplete="off">
+      <div class="setup-help">Get a free key at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> → API Keys → Create Key. Claude reads and writes your Notion directly — no token stored anywhere else.</div>
     </div>
+    <div class="setup-divider"></div>
     <div class="setup-field">
-      <div class="setup-label">Current Training Phase</div>
-      <select class="setup-select" id="setup-phase">
+      <div class="setup-label">Training Phase</div>
+      <select class="setup-select" id="s-phase">
         <option value="Phase 1">Phase 1 — Base</option>
         <option value="Phase 2 Bridge">Phase 2 Bridge</option>
         <option value="Phase 2 - Build">Phase 2 — Build</option>
@@ -447,156 +201,118 @@ body {
     </div>
     <div class="setup-field">
       <div class="setup-label">Week in Phase</div>
-      <input type="number" class="setup-input" id="setup-week" placeholder="e.g. 3" min="1" max="17" value="1">
+      <input type="number" class="setup-input" id="s-week" placeholder="e.g. 3" min="1" max="17" value="1">
     </div>
     <div class="setup-field">
       <div class="setup-label">HRV Status Today</div>
-      <select class="setup-select" id="setup-hrv">
+      <select class="setup-select" id="s-hrv">
         <option value="green">🟢 Green — Train as prescribed</option>
         <option value="red">🔴 Red — Modified session</option>
       </select>
     </div>
-    <button class="btn-black" onclick="saveSetup()">Get Started</button>
+    <button class="btn-black" onclick="doSetup()">Get Started</button>
   </div>
 </div>
 
-<!-- NOTION STATUS -->
-<div id="notion-bar">
-  <div class="notion-dot" id="ndot"></div>
-  <span id="ntext">Connecting…</span>
-</div>
+<!-- STATUS BAR -->
+<div id="nbar"><div class="ndot" id="ndot"></div><span id="ntext">Loading…</span></div>
 
 <!-- CONTENT -->
-<div id="app-content" style="display:none">
+<div id="content">
 
   <!-- TODAY -->
-  <div id="screen-today" class="screen active">
-    <div class="page-header">
-      <div class="page-eyebrow" id="today-eyebrow">Today</div>
-      <div class="page-title dark" id="today-title">–</div>
+  <div id="sc-today" class="screen active">
+    <div class="page-hdr">
+      <div class="page-eyebrow" id="t-eyebrow">Today</div>
+      <div class="page-title dark" id="t-title">–</div>
     </div>
-    <div id="today-body">
-      <div class="loading-wrap"><div class="loader"></div><p>Loading session…</p></div>
-    </div>
+    <div id="t-body"><div class="loading"><div class="loader"></div><p>Loading session…</p></div></div>
   </div>
 
   <!-- LOG -->
-  <div id="screen-log" class="screen">
-    <div class="page-header">
+  <div id="sc-log" class="screen">
+    <div class="page-hdr">
       <div class="page-title dark">Log</div>
     </div>
     <div class="log-wrap">
-      <div class="form-field">
-        <div class="form-lbl">Session name</div>
-        <input class="form-inp" id="log-name" placeholder="e.g. Monday Strength">
+      <div class="f-field"><div class="f-lbl">Session name</div><input class="f-inp" id="l-name" placeholder="e.g. Monday Strength"></div>
+      <div class="f-row">
+        <div class="f-field"><div class="f-lbl">Duration (min)</div><input class="f-inp" id="l-dur" type="number" placeholder="60"></div>
+        <div class="f-field"><div class="f-lbl">Body weight (lbs)</div><input class="f-inp" id="l-bw" type="number" placeholder="180"></div>
       </div>
-      <div class="form-row">
-        <div class="form-field">
-          <div class="form-lbl">Duration (min)</div>
-          <input class="form-inp" id="log-dur" type="number" placeholder="60">
-        </div>
-        <div class="form-field">
-          <div class="form-lbl">Body weight</div>
-          <input class="form-inp" id="log-bw" type="number" placeholder="180 lbs">
+      <div class="f-row">
+        <div class="f-field"><div class="f-lbl">HRV reading</div><input class="f-inp" id="l-hrv" type="number" placeholder="72"></div>
+        <div class="f-field"><div class="f-lbl">Status</div>
+          <select class="f-inp" id="l-status"><option>Complete</option><option>Modified</option><option>Skipped</option></select>
         </div>
       </div>
-      <div class="form-row">
-        <div class="form-field">
-          <div class="form-lbl">HRV reading</div>
-          <input class="form-inp" id="log-hrv" type="number" placeholder="72">
-        </div>
-        <div class="form-field">
-          <div class="form-lbl">Status</div>
-          <select class="form-inp" id="log-status">
-            <option>Complete</option>
-            <option>Modified</option>
-            <option>Skipped</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-field">
-        <div class="form-lbl">Results & Notes</div>
-        <textarea class="form-inp form-textarea" id="log-notes" placeholder="How did it feel? Any PRs?"></textarea>
-      </div>
-      <button class="btn-cta" onclick="submitLog()">Save to Notion</button>
-      <p id="log-fb" style="font-size:12px;color:#8a8a8a;text-align:center;margin-top:10px;min-height:16px"></p>
+      <div class="f-field"><div class="f-lbl">Results & Notes</div><textarea class="f-inp f-ta" id="l-notes" placeholder="How did it feel? Any PRs?"></textarea></div>
+      <button class="btn-cta" onclick="doLog()">Save to Notion</button>
+      <p id="l-fb" style="font-size:12px;color:#aaa;text-align:center;margin-top:10px;min-height:16px"></p>
     </div>
   </div>
 
   <!-- HISTORY -->
-  <div id="screen-history" class="screen">
-    <div class="page-header">
-      <div class="page-title dark">History</div>
-    </div>
-    <div style="padding:0 16px 10px; background:#f9f9f9">
-      <div class="cal-wrap">
-        <div class="cal-header">
-          <button class="cal-nav-btn" onclick="calPrev()">‹</button>
-          <div class="cal-month-lbl" id="cal-lbl">–</div>
-          <button class="cal-nav-btn" onclick="calNext()">›</button>
+  <div id="sc-history" class="screen">
+    <div class="page-hdr"><div class="page-title dark">History</div></div>
+    <div style="padding:0 16px 10px;background:#f5f5f5">
+      <div class="cal-card">
+        <div class="cal-hdr">
+          <button class="cal-btn" onclick="calPrev()">‹</button>
+          <div class="cal-mo" id="cal-lbl">–</div>
+          <button class="cal-btn" onclick="calNext()">›</button>
         </div>
-        <div class="cal-dow-row">
-          <div class="cal-dow">Su</div><div class="cal-dow">Mo</div><div class="cal-dow">Tu</div>
-          <div class="cal-dow">We</div><div class="cal-dow">Th</div><div class="cal-dow">Fr</div><div class="cal-dow">Sa</div>
+        <div class="dow-row">
+          <div class="dow">Su</div><div class="dow">Mo</div><div class="dow">Tu</div>
+          <div class="dow">We</div><div class="dow">Th</div><div class="dow">Fr</div><div class="dow">Sa</div>
         </div>
-        <div class="cal-days" id="cal-grid"></div>
+        <div class="day-grid" id="cal-grid"></div>
       </div>
     </div>
-    <div class="section-lbl">Recent sessions</div>
-    <div id="history-list">
-      <div class="loading-wrap"><div class="loader"></div><p>Loading…</p></div>
-    </div>
+    <div class="sec-lbl">Recent sessions</div>
+    <div id="hist-list"><div class="loading"><div class="loader"></div><p>Loading…</p></div></div>
     <div style="height:24px"></div>
   </div>
 
   <!-- PROGRESS -->
-  <div id="screen-progress" class="screen">
-    <div class="page-header">
-      <div class="page-title dark">Progress</div>
-    </div>
-    <div style="height:8px; background:#f9f9f9"></div>
-    <div class="section-lbl">Training arc</div>
-    <div class="wcard" style="margin-bottom:10px">
-      <div class="wcard-title" id="prog-phase">–</div>
-      <div class="wcard-sub" id="prog-week">–</div>
-      <div class="phase-chips" id="phase-chips"></div>
-    </div>
-    <div class="section-lbl">Weekly sessions</div>
+  <div id="sc-progress" class="screen">
+    <div class="page-hdr"><div class="page-title dark">Progress</div></div>
+    <div style="height:8px;background:#f5f5f5"></div>
+    <div class="sec-lbl">Training arc</div>
     <div class="wcard">
-      <div class="bar-chart" id="bar-chart"></div>
+      <div class="wcard-title" id="p-phase">–</div>
+      <div class="wcard-sub" id="p-week">–</div>
+      <div class="phase-chips" id="p-chips"></div>
     </div>
-    <div class="section-lbl" style="margin-top:4px">This week</div>
-    <div class="stat-grid" id="week-stats"></div>
-    <div class="section-lbl">Streak</div>
+    <div class="sec-lbl">Weekly sessions</div>
+    <div class="wcard"><div class="bar-chart" id="p-bars"></div></div>
+    <div class="sec-lbl">This week</div>
+    <div class="stat-grid" id="p-stats"></div>
+    <div class="sec-lbl">Streak</div>
     <div class="wcard" style="margin-bottom:24px">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <div>
-          <div class="wcard-title" id="streak-val">– days</div>
-          <div class="wcard-sub">Current training streak</div>
-        </div>
-        <div style="font-size:24px" id="streak-emoji">📍</div>
+        <div><div class="wcard-title" id="p-streak">– days</div><div class="wcard-sub">Current streak</div></div>
+        <div style="font-size:26px" id="p-emoji">📍</div>
       </div>
     </div>
   </div>
 
   <!-- SETTINGS -->
-  <div id="screen-settings" class="screen">
-    <div class="page-header">
-      <div class="page-title dark">Settings</div>
+  <div id="sc-settings" class="screen">
+    <div class="page-hdr"><div class="page-title dark">Settings</div></div>
+    <div style="height:8px;background:#f5f5f5"></div>
+    <div class="sec-lbl">Status</div>
+    <div class="s-section">
+      <div class="s-row"><div class="s-key">Claude</div><div class="s-val" id="ss-claude">–</div></div>
+      <div class="s-row"><div class="s-key">Phase</div><div class="s-val" id="ss-phase">–</div></div>
+      <div class="s-row"><div class="s-key">Week</div><div class="s-val" id="ss-week">–</div></div>
+      <div class="s-row"><div class="s-key">HRV today</div><div class="s-val" id="ss-hrv">–</div></div>
     </div>
-    <div style="height:8px; background:#f9f9f9"></div>
-    <div class="section-lbl">Status</div>
-    <div class="settings-section">
-      <div class="settings-row"><div class="settings-key">Notion</div><div class="settings-val" id="s-notion">–</div></div>
-      <div class="settings-row"><div class="settings-key">Phase</div><div class="settings-val" id="s-phase">–</div></div>
-      <div class="settings-row"><div class="settings-key">Week</div><div class="settings-val" id="s-week">–</div></div>
-      <div class="settings-row"><div class="settings-key">HRV today</div><div class="settings-val" id="s-hrv">–</div></div>
-    </div>
-    <div class="section-lbl">Update</div>
+    <div class="sec-lbl">Update</div>
     <div style="padding:0 16px 10px">
-      <div class="form-field">
-        <div class="form-lbl">Training Phase</div>
-        <select class="form-inp" id="e-phase">
+      <div class="f-field">
+        <div class="f-lbl">Training Phase</div>
+        <select class="f-inp" id="e-phase">
           <option value="Phase 1">Phase 1 — Base</option>
           <option value="Phase 2 Bridge">Phase 2 Bridge</option>
           <option value="Phase 2 - Build">Phase 2 — Build</option>
@@ -607,55 +323,47 @@ body {
           <option value="Pre-Race Taper">Pre-Race Taper</option>
         </select>
       </div>
-      <div class="form-field">
-        <div class="form-lbl">Week in Phase</div>
-        <input class="form-inp" id="e-week" type="number" min="1" max="17">
-      </div>
-      <div class="form-field">
-        <div class="form-lbl">HRV Status</div>
-        <select class="form-inp" id="e-hrv">
+      <div class="f-field"><div class="f-lbl">Week in Phase</div><input class="f-inp" id="e-week" type="number" min="1" max="17"></div>
+      <div class="f-field">
+        <div class="f-lbl">HRV Status</div>
+        <select class="f-inp" id="e-hrv">
           <option value="green">🟢 Green — Train as prescribed</option>
           <option value="red">🔴 Red — Modified session</option>
         </select>
       </div>
       <button class="btn-cta" onclick="saveSettings()">Save Changes</button>
     </div>
-    <div class="section-lbl">Notion databases</div>
-    <div class="settings-section">
-      <div class="settings-row"><div class="settings-key">Training Calendar</div><a href="https://www.notion.so/02f75b325ca24dc28d3746944d8ff1cb" target="_blank" class="settings-link">Open ↗</a></div>
-      <div class="settings-row"><div class="settings-key">Exercise Library</div><a href="https://www.notion.so/4490104c0fa04e6badaa572bb78417fd" target="_blank" class="settings-link">Open ↗</a></div>
-      <div class="settings-row"><div class="settings-key">Session Templates</div><a href="https://www.notion.so/2294f4696528402782a8fa40c2ae84d0" target="_blank" class="settings-link">Open ↗</a></div>
-      <div class="settings-row"><div class="settings-key">Exercise Slots</div><a href="https://www.notion.so/960fdf71a7204731bfdec991f3dac567" target="_blank" class="settings-link">Open ↗</a></div>
+    <div class="sec-lbl">Notion databases</div>
+    <div class="s-section">
+      <div class="s-row"><div class="s-key">Training Calendar</div><a href="https://www.notion.so/02f75b325ca24dc28d3746944d8ff1cb" target="_blank" class="s-link">Open ↗</a></div>
+      <div class="s-row"><div class="s-key">Exercise Library</div><a href="https://www.notion.so/4490104c0fa04e6badaa572bb78417fd" target="_blank" class="s-link">Open ↗</a></div>
+      <div class="s-row"><div class="s-key">Session Templates</div><a href="https://www.notion.so/2294f4696528402782a8fa40c2ae84d0" target="_blank" class="s-link">Open ↗</a></div>
+      <div class="s-row"><div class="s-key">Exercise Slots</div><a href="https://www.notion.so/960fdf71a7204731bfdec991f3dac567" target="_blank" class="s-link">Open ↗</a></div>
     </div>
     <div style="padding:16px 16px 40px">
-      <button class="btn-outline" onclick="resetApp()" style="color:#ef4444;border-color:#fecaca">Reset & re-configure</button>
+      <button class="btn-outline" style="color:#ef4444;border-color:#fecaca" onclick="resetApp()">Reset & re-configure</button>
     </div>
   </div>
 
 </div>
 
 <!-- NAV -->
-<nav id="app-nav">
+<nav id="nav">
   <div class="nav-bar">
-    <button class="nav-tab active" onclick="showTab('today')" id="tab-today">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      Today
+    <button class="nav-tab active" id="tab-today" onclick="showTab('today')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Today
     </button>
-    <button class="nav-tab" onclick="showTab('log')" id="tab-log">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Log
+    <button class="nav-tab" id="tab-log" onclick="showTab('log')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Log
     </button>
-    <button class="nav-tab" onclick="showTab('history')" id="tab-history">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-      History
+    <button class="nav-tab" id="tab-history" onclick="showTab('history')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>History
     </button>
-    <button class="nav-tab" onclick="showTab('progress')" id="tab-progress">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      Progress
+    <button class="nav-tab" id="tab-progress" onclick="showTab('progress')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Progress
     </button>
-    <button class="nav-tab" onclick="showTab('settings')" id="tab-settings">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      Settings
+    <button class="nav-tab" id="tab-settings" onclick="showTab('settings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings
     </button>
   </div>
 </nav>
@@ -664,316 +372,353 @@ body {
 
 <script>
 // ── CONSTANTS ──
-const DB_CALENDAR = '02f75b325ca24dc28d3746944d8ff1cb';
-const DB_TEMPLATES = '2294f4696528402782a8fa40c2ae84d0';
-const DB_SLOTS = '960fdf71a7204731bfdec991f3dac567';
-const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DB_CAL  = '02f75b325ca24dc28d3746944d8ff1cb';
+const DB_TMPL = '2294f4696528402782a8fa40c2ae84d0';
+const DB_SLOT = '960fdf71a7204731bfdec991f3dac567';
+const DAYS    = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const MONTHS  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 // ── STATE ──
-let S = { token:'', phase:'Phase 1', week:1, hrv:'green', connected:false, calOffset:0, checked:{}, calEntries:[], todaySlots:[] };
-function save() { localStorage.setItem('fitlog2', JSON.stringify(S)); }
-function load() { try { const d=localStorage.getItem('fitlog2'); if(d) S={...S,...JSON.parse(d)}; } catch(e){} }
+let S = {key:'',phase:'Phase 1',week:1,hrv:'green',calOff:0,checked:{},entries:[],slots:[]};
+const save = () => localStorage.setItem('fl3', JSON.stringify(S));
+const load = () => { try { const d=localStorage.getItem('fl3'); if(d) S={...S,...JSON.parse(d)}; } catch(e){} };
+
+// ── ANTHROPIC API → NOTION via MCP ──
+// Calls claude-sonnet with the Notion MCP server so Claude handles all Notion calls
+// This bypasses CORS entirely — the API call goes to Anthropic, Claude calls Notion server-side
+
+async function claudeNotion(instruction) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': S.key,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+      'anthropic-beta': 'interleaved-thinking-2025-05-14'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      system: `You are a Notion data assistant for a Cocodona 250 training app called FitLog.
+You have access to the Notion MCP server. When given a task, use the Notion tools to retrieve or write data, then respond with ONLY a valid JSON object — no markdown, no explanation.
+
+Database IDs:
+- Training Calendar: ${DB_CAL}
+- Session Templates: ${DB_TMPL}  
+- Exercise Slots: ${DB_SLOT}
+
+Always respond with raw JSON only.`,
+      messages: [{ role: 'user', content: instruction }],
+      mcp_servers: [{
+        type: 'url',
+        url: 'https://mcp.notion.com/mcp',
+        name: 'notion'
+      }]
+    })
+  });
+  if (!res.ok) throw new Error('API ' + res.status);
+  const data = await res.json();
+  // Extract text from response
+  const text = data.content
+    .filter(b => b.type === 'text')
+    .map(b => b.text)
+    .join('');
+  // Strip any markdown fences
+  const clean = text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
+  return JSON.parse(clean);
+}
 
 // ── SETUP ──
-function saveSetup() {
-  const t = document.getElementById('setup-token').value.trim();
-  if (!t) { toast('Enter your Notion token','err'); return; }
-  S.token  = t;
-  S.phase  = document.getElementById('setup-phase').value;
-  S.week   = parseInt(document.getElementById('setup-week').value)||1;
-  S.hrv    = document.getElementById('setup-hrv').value;
-  save(); launchApp();
+function doSetup() {
+  const k = document.getElementById('s-key').value.trim();
+  if (!k) { toast('Enter your Anthropic API key','err'); return; }
+  S.key   = k;
+  S.phase = document.getElementById('s-phase').value;
+  S.week  = parseInt(document.getElementById('s-week').value)||1;
+  S.hrv   = document.getElementById('s-hrv').value;
+  save(); launch();
 }
 
-function launchApp() {
-  document.getElementById('setup-screen').classList.add('hidden');
-  document.getElementById('notion-bar').style.display = 'flex';
-  document.getElementById('app-content').style.display = 'block';
-  document.getElementById('app-nav').style.display = 'block';
-  connect(); loadToday(); renderCal(); loadHistory(); renderProgress(); renderSettings();
+function launch() {
+  document.getElementById('setup').classList.add('hidden');
+  document.getElementById('nbar').style.display   = 'flex';
+  document.getElementById('content').style.display = 'block';
+  document.getElementById('nav').style.display    = 'block';
+  setN('Ready','ok');
+  loadToday(); renderCal(); loadHistory(); renderProgress(); renderSettings();
 }
 
-// ── NOTION API ──
-async function api(path, method='GET', body=null) {
-  const opts = { method, headers:{'Authorization':'Bearer '+S.token,'Content-Type':'application/json','Notion-Version':'2022-06-28'} };
-  if (body) opts.body = JSON.stringify(body);
-  const r = await fetch('https://api.notion.com/v1/'+path, opts);
-  if (!r.ok) throw new Error(r.status);
-  return r.json();
-}
-
-async function connect() {
-  setNBar('Connecting…', '');
-  try { await api('databases/'+DB_TEMPLATES); setNBar('Connected to Notion','ok'); S.connected=true; }
-  catch(e) { setNBar('Connection failed — check token in Settings','err'); }
-}
-
-function setNBar(msg, cls) {
-  document.getElementById('ndot').className = 'notion-dot'+(cls?' '+cls:'');
+function setN(msg, cls) {
+  document.getElementById('ndot').className = 'ndot'+(cls?' '+cls:'');
   document.getElementById('ntext').textContent = msg;
-  document.getElementById('s-notion').textContent = cls==='ok' ? 'Connected ✓' : cls==='err' ? 'Error' : 'Connecting…';
+  document.getElementById('ss-claude').textContent = cls==='ok'?'Connected ✓':cls==='err'?'Error':'…';
 }
 
 // ── TODAY ──
 async function loadToday() {
-  const today = new Date();
-  const dayName = DAYS[today.getDay()];
-  document.getElementById('today-eyebrow').textContent = today.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
-  document.getElementById('today-title').textContent = dayName;
-  document.getElementById('today-body').innerHTML = '<div class="loading-wrap"><div class="loader"></div><p>Loading '+dayName+'\'s session…</p></div>';
+  const now     = new Date();
+  const dayName = DAYS[now.getDay()];
+  document.getElementById('t-eyebrow').textContent = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  document.getElementById('t-title').textContent   = dayName;
+  document.getElementById('t-body').innerHTML = '<div class="loading"><div class="loader"></div><p>Loading '+dayName+'\'s session…</p></div>';
+  setN('Loading session…','');
 
   try {
-    const tmplRes = await api('databases/'+DB_TEMPLATES+'/query','POST',{filter:{property:'Day',select:{equals:dayName}}});
-    if (!tmplRes.results?.length) { renderRestDay(dayName); return; }
+    const result = await claudeNotion(`
+Query the Session Templates database (${DB_TMPL}) for the entry where Day = "${dayName}".
+Then query the Exercise Slots database (${DB_SLOT}) for all entries where Phase = "${S.phase}", ordered by "Order in Session" ascending.
+Filter the slots to only those whose "Session Template" relation includes the template you found.
 
-    const tmpl = tmplRes.results[0];
-    const tp   = tmpl.properties;
-    const type = tp['Session Type']?.select?.name || dayName;
-    const dur  = tp['Estimated Duration (min)']?.number || '–';
-    const ref  = tp['Reference Page URL']?.url || '';
-    const hrv  = tp['HRV Red Day Summary']?.rich_text?.[0]?.text?.content || '';
-
-    const slotsRes = await api('databases/'+DB_SLOTS+'/query','POST',{
-      filter:{property:'Phase',select:{equals:S.phase}},
-      sorts:[{property:'Order in Session',direction:'ascending'}],
-      page_size:50
-    });
-
-    const tmplId = tmpl.id.replace(/-/g,'');
-    const slots  = (slotsRes.results||[]).filter(s=>
-      (s.properties['Session Template']?.relation||[]).some(r=>r.id.replace(/-/g,'')=== tmplId)
-    );
-    S.todaySlots = slots;
-    renderToday(dayName, today, type, dur, ref, hrv, slots);
+Return JSON in this exact shape:
+{
+  "sessionType": "string",
+  "duration": number_or_null,
+  "refUrl": "string_or_null",
+  "hrvSummary": "string_or_null",
+  "exercises": [
+    {
+      "name": "string",
+      "sets": number_or_null,
+      "reps": "string_or_null",
+      "load": "string_or_null",
+      "notes": "string_or_null",
+      "hrvMod": "string_or_null"
+    }
+  ]
+}
+If no template found, return { "sessionType": "Rest Day", "exercises": [] }
+`);
+    S.slots = result.exercises || [];
+    renderToday(dayName, now, result);
+    setN('Connected','ok');
   } catch(e) {
-    renderOfflineToday(dayName, today);
+    console.error(e);
+    renderTodayError(dayName);
+    setN('Error — check API key in Settings','err');
   }
 }
 
-function renderToday(day, date, type, dur, ref, hrvMsg, slots) {
+function renderToday(day, now, d) {
   const isRed = S.hrv === 'red';
   let h = '';
 
-  if (isRed) h += `<div class="hrv-banner"><div class="hrv-banner-title">🔴 HRV Red Day</div><div class="hrv-banner-text">${hrvMsg||'Modified session — reduce intensity.'}</div></div>`;
+  if (isRed && d.hrvSummary) {
+    h += `<div class="hrv-ban"><div class="hrv-title">🔴 HRV Red Day</div><div class="hrv-text">${d.hrvSummary}</div></div>`;
+  }
 
-  h += `<div class="session-hero">
-    <div class="session-hero-day">${S.phase} · Week ${S.week}</div>
-    <div class="session-hero-name">${type}</div>
-    <div class="session-hero-meta">~${dur} min${isRed ? ' &nbsp;·&nbsp; <span>Modified</span>' : ''}</div>
+  h += `<div class="sess-hero">
+    <div class="sess-day">${S.phase} · Week ${S.week}</div>
+    <div class="sess-name">${d.sessionType||day}</div>
+    <div class="sess-meta">${d.duration ? '~'+d.duration+' min' : ''}${isRed?' &nbsp;·&nbsp; <span>Modified</span>':''}</div>
   </div>`;
 
-  if (slots.length) {
-    h += '<div class="ex-section-label">Exercises</div>';
-    slots.forEach((s,i) => {
-      const p    = s.properties;
-      const name = p['Name']?.title?.[0]?.text?.content || 'Exercise';
-      const sets = p['Sets']?.number;
-      const reps = p['Reps']?.rich_text?.[0]?.text?.content||'';
-      const load = p['Load']?.rich_text?.[0]?.text?.content||'';
-      const note = isRed ? (p['HRV Red Day Modification']?.rich_text?.[0]?.text?.content||'') : (p['Tempo / Notes']?.rich_text?.[0]?.text?.content||'');
-      const done = S.checked[name];
+  if (d.exercises && d.exercises.length) {
+    h += '<div class="ex-lbl">Exercises</div>';
+    d.exercises.forEach((ex, i) => {
+      const note = isRed ? ex.hrvMod : ex.notes;
+      const done = S.checked[ex.name];
+      const safeN = ex.name.replace(/'/g,"\\'");
       h += `<div class="ex-item">
         <div class="ex-num">${String(i+1).padStart(2,'0')}</div>
         <div class="ex-body">
-          <div class="ex-name">${name}</div>
+          <div class="ex-name">${ex.name}</div>
           <div class="ex-pills">
-            ${sets?`<span class="ex-pill">${sets} sets</span>`:''}
-            ${reps?`<span class="ex-pill">${reps} reps</span>`:''}
-            ${load?`<span class="ex-pill green">${load}</span>`:''}
+            ${ex.sets?`<span class="ex-pill">${ex.sets} sets</span>`:''}
+            ${ex.reps?`<span class="ex-pill">${ex.reps} reps</span>`:''}
+            ${ex.load?`<span class="ex-pill g">${ex.load}</span>`:''}
           </div>
           ${note?`<div class="ex-note">${note}</div>`:''}
         </div>
-        <button class="ex-check ${done?'done':''}" onclick="toggleCheck('${name.replace(/'/g,"\\'")}',this)"></button>
+        <button class="ex-chk${done?' done':''}" onclick="chk('${safeN}',this)"></button>
       </div>`;
     });
   } else {
-    h += `<div class="wcard"><div class="wcard-sub">No phase slots found for ${S.phase} yet — check Exercise Slots in Notion.</div></div>`;
+    h += `<div class="wcard"><div class="wcard-sub">No exercise slots found for ${S.phase}. Check Exercise Slots in Notion, or log a free-form session below.</div></div>`;
   }
 
-  if (ref) h += `<a href="${ref}" target="_blank" class="notion-link-btn">Open full guide in Notion ↗</a>`;
+  if (d.refUrl) h += `<a href="${d.refUrl}" target="_blank" class="notion-link">Open full guide in Notion ↗</a>`;
   h += `<div style="padding:0 16px 32px"><button class="btn-cta" onclick="showTab('log')">Log this session</button></div>`;
-
-  document.getElementById('today-body').innerHTML = h;
+  document.getElementById('t-body').innerHTML = h;
 }
 
-function renderRestDay(day) {
-  document.getElementById('today-body').innerHTML = `<div class="wcard"><div class="wcard-title">No template found for ${day}</div><div class="wcard-sub" style="margin-top:6px">Use the Log tab to record any activity, or check your Session Templates in Notion.</div></div>`;
-}
-
-function renderOfflineToday(day, date) {
-  document.getElementById('today-body').innerHTML = `
-    <div class="wcard" style="border-left:4px solid #f59e0b;border-radius:14px">
-      <div class="wcard-title">Offline</div>
-      <div class="wcard-sub" style="margin-top:4px">Can't reach Notion. Check your token in Settings.</div>
+function renderTodayError(day) {
+  document.getElementById('t-body').innerHTML = `
+    <div class="wcard" style="border-left:4px solid #f59e0b">
+      <div class="wcard-title">Can't reach Notion</div>
+      <div class="wcard-sub" style="margin-top:4px">Check your Anthropic API key in Settings. Make sure you've shared your Cocodona 250 Notion page with your Claude integration.</div>
     </div>
-    <div style="padding:0 16px"><button class="btn-outline" onclick="connect().then(loadToday)">Retry</button></div>`;
+    <div style="padding:0 16px"><button class="btn-outline" onclick="loadToday()">Retry</button></div>`;
 }
 
-function toggleCheck(name, btn) {
+function chk(name, btn) {
   S.checked[name] = !S.checked[name];
   btn.classList.toggle('done', S.checked[name]);
   save();
-  const total = S.todaySlots.length;
-  const done  = Object.values(S.checked).filter(Boolean).length;
-  if (done >= total && total > 0) toast('Session complete 🏔️','ok');
+  if (S.slots.length && Object.values(S.checked).filter(Boolean).length >= S.slots.length)
+    toast('Session complete 🏔️','ok');
 }
 
 // ── LOG ──
-async function submitLog() {
-  const name = document.getElementById('log-name').value.trim();
+async function doLog() {
+  const name = document.getElementById('l-name').value.trim();
   if (!name) { toast('Enter a session name','err'); return; }
-  const fb = document.getElementById('log-fb');
-  fb.textContent = 'Saving…';
-  const today = new Date();
+  const fb = document.getElementById('l-fb');
+  fb.textContent = 'Saving to Notion…';
+
+  const now    = new Date();
+  const day    = DAYS[now.getDay()];
+  const status = document.getElementById('l-status').value;
+  const notes  = document.getElementById('l-notes').value.trim();
+  const bw     = document.getElementById('l-bw').value;
+
   try {
-    await api('pages','POST',{
-      parent:{database_id:DB_CALENDAR},
-      properties:{
-        'Name':{title:[{text:{content:name}}]},
-        'Status':{select:{name:document.getElementById('log-status').value}},
-        'Phase':{select:{name:S.phase}},
-        'Day':{select:{name:DAYS[today.getDay()]}},
-        'date:Date:start':today.toISOString().split('T')[0],
-        'date:Date:is_datetime':0,
-        ...(document.getElementById('log-notes').value?{'Results & Notes':{rich_text:[{text:{content:document.getElementById('log-notes').value}}]}}:{}),
-        ...(document.getElementById('log-bw').value?{'Body Weight':{number:parseFloat(document.getElementById('log-bw').value)}}:{}),
-      }
-    });
+    await claudeNotion(`
+Create a new page in the Training Calendar database (${DB_CAL}) with these property values:
+- Name (title): "${name}"
+- Status (select): "${status}"
+- Phase (select): "${S.phase}"
+- Day (select): "${day}"
+- Date (date): "${now.toISOString().split('T')[0]}"
+${notes ? `- "Results & Notes" (rich_text): "${notes.replace(/"/g,"'")}"` : ''}
+${bw ? `- "Body Weight" (number): ${parseFloat(bw)}` : ''}
+
+Return JSON: { "success": true, "pageId": "..." }
+`);
     toast('Saved to Notion ✓','ok');
-    fb.textContent='';
-    ['log-name','log-dur','log-bw','log-hrv','log-notes'].forEach(id=>document.getElementById(id).value='');
-    S.checked={}; save(); loadHistory();
-  } catch(e) { toast('Save failed','err'); fb.textContent='Error — check Notion token in Settings.'; }
+    fb.textContent = '';
+    ['l-name','l-dur','l-bw','l-hrv','l-notes'].forEach(id => document.getElementById(id).value='');
+    S.checked = {}; save(); loadHistory();
+  } catch(e) {
+    toast('Save failed','err');
+    fb.textContent = 'Error — check API key in Settings.';
+  }
 }
 
 // ── CALENDAR ──
 function renderCal() {
-  const base  = new Date();
-  const ref   = new Date(base.getFullYear(), base.getMonth()+S.calOffset, 1);
+  const base = new Date();
+  const ref  = new Date(base.getFullYear(), base.getMonth()+S.calOff, 1);
   document.getElementById('cal-lbl').textContent = MONTHS[ref.getMonth()]+' '+ref.getFullYear();
-  const daysInMonth = new Date(ref.getFullYear(), ref.getMonth()+1, 0).getDate();
-  const startDow    = ref.getDay();
+  const dim = new Date(ref.getFullYear(), ref.getMonth()+1, 0).getDate();
+  const sd  = ref.getDay();
   const today = new Date();
-  let html = '';
-  for (let i=0;i<startDow;i++) html += '<div class="cal-day empty"></div>';
-  for (let d=1;d<=daysInMonth;d++) {
-    const isToday = S.calOffset===0 && d===today.getDate();
-    const dayDate = new Date(ref.getFullYear(), ref.getMonth(), d);
-    const hasW    = S.calEntries.some(e=>{
+  let h = '';
+  for (let i=0;i<sd;i++) h+='<div class="cal-day em"></div>';
+  for (let d=1;d<=dim;d++) {
+    const isT = S.calOff===0 && d===today.getDate();
+    const dd  = new Date(ref.getFullYear(), ref.getMonth(), d);
+    const hw  = S.entries.some(e => {
       if (!e.date||e.status!=='Complete') return false;
       const ed = new Date(e.date+'T12:00:00');
-      return ed.getFullYear()===dayDate.getFullYear()&&ed.getMonth()===dayDate.getMonth()&&ed.getDate()===dayDate.getDate();
+      return ed.toDateString()===dd.toDateString();
     });
-    const cls = isToday ? 'today' : hasW ? 'has-w' : '';
-    html += `<div class="cal-day ${cls}">${d}</div>`;
+    h+=`<div class="cal-day${isT?' td':hw?' hw':''}">${d}</div>`;
   }
-  document.getElementById('cal-grid').innerHTML = html;
+  document.getElementById('cal-grid').innerHTML = h;
 }
-function calPrev() { S.calOffset--; renderCal(); }
-function calNext() { S.calOffset++; renderCal(); }
+const calPrev = () => { S.calOff--; renderCal(); };
+const calNext = () => { S.calOff++; renderCal(); };
 
 async function loadHistory() {
-  const list = document.getElementById('history-list');
-  list.innerHTML = '<div class="loading-wrap"><div class="loader"></div><p>Loading…</p></div>';
+  document.getElementById('hist-list').innerHTML='<div class="loading"><div class="loader"></div><p>Loading…</p></div>';
   try {
-    const res = await api('databases/'+DB_CALENDAR+'/query','POST',{sorts:[{property:'Date',direction:'descending'}],page_size:20});
-    S.calEntries = (res.results||[]).map(e=>({
-      date:  e.properties['Date']?.date?.start||'',
-      name:  e.properties['Name']?.title?.[0]?.text?.content||'Session',
-      status:e.properties['Status']?.select?.name||'Planned',
-      phase: e.properties['Phase']?.select?.name||'',
-      day:   e.properties['Day']?.select?.name||'',
-    }));
-    renderCal(); renderHistoryList(); renderProgress();
-  } catch(e) { list.innerHTML = '<div class="wcard"><div class="wcard-sub">Could not load history.</div></div>'; }
+    const result = await claudeNotion(`
+Query the Training Calendar database (${DB_CAL}), sorted by Date descending, limit 20 results.
+Return JSON: {
+  "entries": [
+    { "date": "YYYY-MM-DD", "name": "string", "status": "string", "phase": "string", "day": "string" }
+  ]
+}
+`);
+    S.entries = result.entries || [];
+    renderCal(); renderHistList(); renderProgress();
+  } catch(e) {
+    document.getElementById('hist-list').innerHTML='<div class="wcard"><div class="wcard-sub">Could not load history.</div></div>';
+  }
 }
 
-function renderHistoryList() {
-  const list = document.getElementById('history-list');
-  if (!S.calEntries.length) { list.innerHTML='<div class="wcard"><div class="wcard-sub">No sessions logged yet.</div></div>'; return; }
-  list.innerHTML = S.calEntries.slice(0,10).map(e=>{
-    const cls = e.status==='Complete'?'complete':e.status==='Skipped'?'skipped':'planned';
-    const dl  = e.date ? new Date(e.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '–';
-    return `<div class="history-item">
-      <div class="history-dot ${cls}"></div>
-      <div class="history-info">
-        <div class="history-name">${e.name}</div>
-        <div class="history-meta">${dl}${e.day?' · '+e.day:''}${e.phase?' · '+e.phase:''}</div>
-      </div>
-      <span class="history-badge ${cls}">${e.status}</span>
+function renderHistList() {
+  const el = document.getElementById('hist-list');
+  if (!S.entries.length) { el.innerHTML='<div class="wcard"><div class="wcard-sub">No sessions logged yet.</div></div>'; return; }
+  el.innerHTML = S.entries.slice(0,10).map(e => {
+    const c  = e.status==='Complete'?'c':e.status==='Skipped'?'s':'p';
+    const dl = e.date ? new Date(e.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '–';
+    return `<div class="hist-item">
+      <div class="hdot ${c}"></div>
+      <div class="hinfo"><div class="hname">${e.name}</div><div class="hmeta">${dl}${e.day?' · '+e.day:''}${e.phase?' · '+e.phase:''}</div></div>
+      <span class="hbadge ${c}">${e.status}</span>
     </div>`;
   }).join('');
 }
 
 // ── PROGRESS ──
 function renderProgress() {
-  document.getElementById('prog-phase').textContent = S.phase;
-  document.getElementById('prog-week').textContent  = 'Week '+S.week;
+  document.getElementById('p-phase').textContent = S.phase;
+  document.getElementById('p-week').textContent  = 'Week ' + S.week;
 
   const phases = ['Phase 1','Phase 2 Bridge','Phase 2 - Build','Phase 3 - Peak'];
-  document.getElementById('phase-chips').innerHTML = phases.map(p=>
-    `<span class="phase-chip${p===S.phase?' active':''}">${p}</span>`
-  ).join('');
+  document.getElementById('p-chips').innerHTML = phases.map(p=>
+    `<span class="pchip${p===S.phase?' active':''}">${p}</span>`).join('');
 
   const now = new Date();
   const weeks = [];
   for (let w=5;w>=0;w--) {
-    const start=new Date(now); start.setDate(now.getDate()-now.getDay()-w*7);
-    const end=new Date(start); end.setDate(start.getDate()+6);
-    const cnt=S.calEntries.filter(e=>{
-      if(!e.date||e.status!=='Complete') return false;
-      const d=new Date(e.date+'T12:00:00'); return d>=start&&d<=end;
+    const s=new Date(now); s.setDate(now.getDate()-now.getDay()-w*7);
+    const e=new Date(s);   e.setDate(s.getDate()+6);
+    const cnt=S.entries.filter(x=>{
+      if(!x.date||x.status!=='Complete') return false;
+      const d=new Date(x.date+'T12:00:00'); return d>=s&&d<=e;
     }).length;
-    weeks.push({l:(start.getMonth()+1)+'/'+(start.getDate()),cnt});
+    weeks.push({l:(s.getMonth()+1)+'/'+(s.getDate()),cnt});
   }
   const mx=Math.max(1,...weeks.map(w=>w.cnt));
-  document.getElementById('bar-chart').innerHTML=weeks.map(w=>{
+  document.getElementById('p-bars').innerHTML=weeks.map(w=>{
     const pct=Math.round((w.cnt/mx)*100);
     return `<div class="bar-col"><div class="bar" style="height:${Math.max(4,pct)}%"></div><div class="bar-lbl">${w.l}</div></div>`;
   }).join('');
 
   const ws=new Date(now); ws.setDate(now.getDate()-now.getDay());
-  const tw=S.calEntries.filter(e=>e.date&&e.status==='Complete'&&new Date(e.date+'T12:00:00')>=ws);
-  document.getElementById('week-stats').innerHTML=`
-    <div class="stat-card"><div class="stat-val">${tw.length}</div><div class="stat-lbl">Sessions</div></div>
+  const tw=S.entries.filter(e=>e.date&&e.status==='Complete'&&new Date(e.date+'T12:00:00')>=ws);
+  document.getElementById('p-stats').innerHTML=`
+    <div class="stat-card"><div class="stat-val">${tw.length}</div><div class="stat-lbl">Sessions this week</div></div>
     <div class="stat-card"><div class="stat-val">${S.week}<span> wk</span></div><div class="stat-lbl">In phase</div></div>`;
 
   let streak=0;
-  const seenDays=new Set(S.calEntries.filter(e=>e.status==='Complete'&&e.date).map(e=>e.date.split('T')[0]));
+  const seen=new Set(S.entries.filter(e=>e.status==='Complete'&&e.date).map(e=>e.date.split('T')[0]));
   const cd=new Date(now);
-  while(seenDays.has(cd.toISOString().split('T')[0])){ streak++; cd.setDate(cd.getDate()-1); }
-  document.getElementById('streak-val').textContent=streak+' day'+(streak!==1?'s':'');
-  document.getElementById('streak-emoji').textContent=streak>=7?'🔥':streak>=3?'⚡':'📍';
+  while(seen.has(cd.toISOString().split('T')[0])){ streak++; cd.setDate(cd.getDate()-1); }
+  document.getElementById('p-streak').textContent=streak+' day'+(streak!==1?'s':'');
+  document.getElementById('p-emoji').textContent=streak>=7?'🔥':streak>=3?'⚡':'📍';
 }
 
 // ── SETTINGS ──
 function renderSettings() {
-  document.getElementById('s-phase').textContent=S.phase;
-  document.getElementById('s-week').textContent='Week '+S.week;
-  document.getElementById('s-hrv').textContent=S.hrv==='red'?'🔴 Red':'🟢 Green';
-  document.getElementById('e-phase').value=S.phase;
-  document.getElementById('e-week').value=S.week;
-  document.getElementById('e-hrv').value=S.hrv;
+  document.getElementById('ss-phase').textContent = S.phase;
+  document.getElementById('ss-week').textContent  = 'Week '+S.week;
+  document.getElementById('ss-hrv').textContent   = S.hrv==='red'?'🔴 Red':'🟢 Green';
+  document.getElementById('e-phase').value = S.phase;
+  document.getElementById('e-week').value  = S.week;
+  document.getElementById('e-hrv').value   = S.hrv;
 }
 function saveSettings() {
-  S.phase=document.getElementById('e-phase').value;
-  S.week=parseInt(document.getElementById('e-week').value)||1;
-  S.hrv=document.getElementById('e-hrv').value;
-  save(); renderSettings(); renderProgress(); S.checked={}; loadToday(); toast('Saved','ok');
+  S.phase = document.getElementById('e-phase').value;
+  S.week  = parseInt(document.getElementById('e-week').value)||1;
+  S.hrv   = document.getElementById('e-hrv').value;
+  save(); renderSettings(); renderProgress();
+  S.checked={}; loadToday(); toast('Saved','ok');
 }
 function resetApp() {
-  if(!confirm('Reset FitLog?')) return;
-  localStorage.removeItem('fitlog2'); location.reload();
+  if (!confirm('Reset FitLog? This clears your API key and settings.')) return;
+  localStorage.removeItem('fl3'); location.reload();
 }
 
 // ── NAV ──
 function showTab(id) {
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('screen-'+id).classList.add('active');
+  document.getElementById('sc-'+id).classList.add('active');
   document.getElementById('tab-'+id).classList.add('active');
-  document.getElementById('app-content').scrollTop=0;
+  document.getElementById('content').scrollTop=0;
   if(id==='history'){renderCal();loadHistory();}
   if(id==='progress') renderProgress();
   if(id==='settings') renderSettings();
@@ -984,15 +729,15 @@ let tt;
 function toast(msg,cls=''){
   const el=document.getElementById('toast');
   el.textContent=msg; el.className=(cls?cls+' ':'')+'show';
-  clearTimeout(tt); tt=setTimeout(()=>{el.className='';},2600);
+  clearTimeout(tt); tt=setTimeout(()=>{el.className='';},2800);
 }
 
 // ── BOOT ──
 load();
-if(S.token){ launchApp(); }
+if (S.key) { launch(); }
 else {
-  if(S.phase) document.getElementById('setup-phase').value=S.phase;
-  if(S.week)  document.getElementById('setup-week').value=S.week;
+  if (S.phase) document.getElementById('s-phase').value=S.phase;
+  if (S.week)  document.getElementById('s-week').value=S.week;
 }
 </script>
 </body>
