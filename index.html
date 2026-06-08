@@ -1,1 +1,1846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Train" />
+  <title>Cocodona Training</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>* { box-sizing: border-box; margin: 0; padding: 0; } html, body, #root { height: 100%; } body { background: #f5f5f7; }</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+const { useState, useEffect, useCallback } = React;
 
+const SUPABASE_URL = "https://mejzbduhwhghxprdujzl.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1lanpiZHVod2hnaHhwcmR1anpsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzA0MTEsImV4cCI6MjA5NTg0NjQxMX0.WGvSETlba4bN839SBatg5MTRBANuSt7DAmycdn95BM8";
+
+const db = async (path, options = {}) => {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: options.prefer || "return=representation",
+      ...options.headers,
+    },
+    ...options,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+};
+
+const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const DAY_SHORT  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+function toDateStr(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth()+1).padStart(2,"0");
+  const d = String(date.getDate()).padStart(2,"0");
+  return `${y}-${m}-${d}`;
+}
+
+function getWeekDates(anchor) {
+  const d = new Date(anchor);
+  const mon = new Date(d);
+  mon.setDate(d.getDate() - ((d.getDay()+6)%7));
+  return Array.from({length:7},(_,i)=>{
+    const dd = new Date(mon);
+    dd.setDate(mon.getDate()+i);
+    return dd;
+  });
+}
+
+// ─── PHASE COLUMN MAP ────────────────────────────────────────────────────────
+const PHASE_PREFIX = {
+  "Phase 1":        "p1",
+  "Phase 2 Bridge": "p2b",
+  "Phase 2 - Build":"p2",
+  "Phase 3 - Peak": "p3",
+  "Pre-Race Taper": "taper",
+};
+
+function getPrescription(workout, phase) {
+  const prefix = PHASE_PREFIX[phase] || "p1";
+  const sets = workout[`${prefix}_sets`];
+  const reps = workout[`${prefix}_reps`];
+  const load = workout[`${prefix}_load`];
+  const tempo = workout[`${prefix}_tempo`];
+  if (!sets && !reps) {
+    // fallback to p1
+    return {
+      sets: workout.p1_sets,
+      reps: workout.p1_reps,
+      load: workout.p1_load,
+      tempo: workout.p1_tempo,
+    };
+  }
+  return { sets, reps, load, tempo };
+}
+
+function formatPrescription(rx) {
+  if (!rx.sets && !rx.reps) return "See notes";
+  const sets = rx.sets ? `${rx.sets}×` : "";
+  const reps = rx.reps || "";
+  const load = rx.load ? ` · ${rx.load}` : "";
+  return `${sets}${reps}${load}`;
+}
+
+function secsToMMSS(s) {
+  if (!s) return "—";
+  const m = Math.floor(s/60);
+  const sec = s%60;
+  return `${m}:${String(sec).padStart(2,"0")}`;
+}
+
+function secsToHMM(s) {
+  if (!s) return "—";
+  const h = Math.floor(s/3600);
+  const m = Math.floor((s%3600)/60);
+  return `${h}:${String(m).padStart(2,"0")}`;
+}
+
+function formatTime(s) {
+  if (!s) return "—";
+  if (s >= 60) {
+    const m = Math.floor(s/60);
+    const sec = s%60;
+    return sec > 0 ? `${m}m ${sec}s` : `${m}m`;
+  }
+  return `${s}s`;
+}
+
+function daysUntil(dateStr) {
+  const target = new Date(dateStr+"T12:00:00");
+  const today  = new Date();
+  today.setHours(0,0,0,0);
+  return Math.ceil((target-today)/(1000*60*60*24));
+}
+
+// ─── SUPABASE HELPERS ────────────────────────────────────────────────────────
+
+async function fetchAppState() {
+  const [settings, todayHrv, races] = await Promise.all([
+    db(`settings?select=*&limit=1`),
+    db(`hrv?date=eq.${toDateStr(new Date())}&select=*&limit=1`),
+    db(`races?order=race_date.asc&select=*`),
+  ]);
+  return {
+    settings: settings?.[0] || { current_phase:"Phase 1", hrv_red_day_threshold_pct:8 },
+    hrv: todayHrv?.[0] || null,
+    races: races || [],
+  };
+}
+
+async function fetchWorkoutsForDay(dayName) {
+  return await db(
+    `workouts?day_of_week=eq.${dayName}&select=*,exercises(*)&order=order_in_session.asc`
+  ) || [];
+}
+
+async function fetchOrCreateSession(dateStr, dayName, sessionName, phase, redDay) {
+  const existing = await db(
+    `sessions?logged_date=eq.${dateStr}&session_name=eq.${encodeURIComponent(sessionName)}&select=*&limit=1`
+  );
+  if (existing?.length) return existing[0];
+  const created = await db(`sessions`, {
+    method: "POST",
+    body: JSON.stringify({
+      logged_date: dateStr,
+      day_of_week: dayName,
+      session_name: sessionName,
+      phase,
+      red_day: redDay,
+    }),
+  });
+  return Array.isArray(created) ? created[0] : created;
+}
+
+async function fetchResultsForSession(sessionId) {
+  return await db(`results?session_id=eq.${sessionId}&select=*&order=logged_at.asc`) || [];
+}
+
+async function saveResult(sessionId, workoutId, setNumber, reps, weight, time, rpe) {
+  return db(`results`, {
+    method:"POST",
+    body: JSON.stringify({
+      session_id: sessionId,
+      workout_id: workoutId,
+      set_number: setNumber,
+      reps_completed: reps ? parseInt(reps) : null,
+      weight_lbs: weight ? parseFloat(weight) : null,
+      duration_seconds: time ? parseInt(time) : null,
+      rpe: rpe ? parseInt(rpe) : null,
+    }),
+  });
+}
+
+async function completeSession(sessionId, durationMins, overallRpe, notes) {
+  return db(`sessions?id=eq.${sessionId}`, {
+    method:"PATCH",
+    body: JSON.stringify({
+      actual_duration_minutes: durationMins ? parseInt(durationMins) : null,
+      overall_rpe: overallRpe ? parseInt(overallRpe) : null,
+      notes: notes || null,
+      completed_at: new Date().toISOString(),
+    }),
+    prefer:"return=minimal",
+  });
+}
+
+async function logHrv(date, hrv, hr, sleep, energy, notes, threshold) {
+  const existing = await db(`hrv?date=eq.${date}&select=id&limit=1`);
+  // calculate 7-day avg
+  const recent = await db(`hrv?date=lt.${date}&select=morning_hrv&order=date.desc&limit=7`) || [];
+  const vals = recent.map(r=>r.morning_hrv).filter(Boolean);
+  const avg7 = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : hrv;
+  const redDay = hrv < avg7*(1-(threshold||8)/100);
+
+  const payload = {
+    date, morning_hrv:parseInt(hrv), resting_hr:hr?parseInt(hr):null,
+    sleep_hours:sleep?parseFloat(sleep):null, energy_level:energy?parseInt(energy):null,
+    notes:notes||null, red_day:redDay,
+  };
+
+  if (existing?.length) {
+    await db(`hrv?id=eq.${existing[0].id}`, {
+      method:"PATCH", body:JSON.stringify(payload), prefer:"return=minimal"
+    });
+  } else {
+    await db(`hrv`, { method:"POST", body:JSON.stringify(payload) });
+  }
+  return { redDay, avg7: Math.round(avg7) };
+}
+
+async function fetchAllResults() {
+  return await db(
+    `results?select=*,workouts(exercises(name),session_name),sessions(logged_date,session_name)&order=logged_at.desc&limit=300`
+  ) || [];
+}
+
+async function fetchBests() {
+  const results = await db(
+    `results?select=*,workouts(exercises(name,category)),sessions(logged_date)&order=logged_at.desc`
+  ) || [];
+  const bests = {};
+  for (const r of results) {
+    const name = r.workouts?.exercises?.name;
+    if (!name) continue;
+    if (!bests[name]) bests[name] = {
+      name,
+      category: r.workouts?.exercises?.category,
+      maxWeight: null, maxWeightDate: null,
+      maxReps: null, maxRepsDate: null,
+      maxTime: null, maxTimeDate: null,
+    };
+    const date = r.sessions?.logged_date || null;
+    if (r.weight_lbs && (!bests[name].maxWeight || r.weight_lbs > bests[name].maxWeight)) {
+      bests[name].maxWeight = r.weight_lbs;
+      bests[name].maxWeightDate = date;
+    }
+    if (r.reps_completed && (!bests[name].maxReps || r.reps_completed > bests[name].maxReps)) {
+      bests[name].maxReps = r.reps_completed;
+      bests[name].maxRepsDate = date;
+    }
+    if (r.duration_seconds && (!bests[name].maxTime || r.duration_seconds > bests[name].maxTime)) {
+      bests[name].maxTime = r.duration_seconds;
+      bests[name].maxTimeDate = date;
+    }
+  }
+  return Object.values(bests);
+}
+
+async function fetchBenchmarkResults() {
+  return await db(`benchmark_results?select=*&order=tested_date.desc`) || [];
+}
+
+async function saveBenchmarkResult(payload) {
+  return db(`benchmark_results`, { method:"POST", body:JSON.stringify(payload) });
+}
+
+// ─── CSS ─────────────────────────────────────────────────────────────────────
+
+const css = `
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    --bg:#f5f5f7;--surface:#ffffff;--surface2:#f0f0f2;--border:#e8e8ec;--border2:#d8d8de;
+    --text:#111114;--text2:#555560;--muted:#9898a8;
+    --green:#1a9e5c;--green-bg:#edf7f2;--green-border:#b8e8d0;
+    --red:#d93025;--red-bg:#fdf0ef;--red-border:#f5c0bc;
+    --blue:#1a6fe8;--blue-bg:#eef4fd;
+    --orange:#e87020;--orange-bg:#fdf3ed;
+    --amber:#b87000;--amber-bg:#fdf8ed;--amber-border:#f0d890;
+    --purple:#6b3fa0;--purple-bg:#f5f0fd;
+  }
+  body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;min-height:100vh;-webkit-font-smoothing:antialiased}
+  .app{max-width:430px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;background:var(--bg)}
+
+  /* WEEK STRIP */
+  .week-strip{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 16px 0}
+  .week-strip-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .week-label{font-size:18px;font-weight:700;color:var(--text);letter-spacing:-.3px}
+  .week-nav{display:flex;gap:6px}
+  .week-nav-btn{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .days-row{display:flex;gap:4px}
+  .day-btn{flex:1;display:flex;flex-direction:column;align-items:center;padding:6px 2px 10px;border-radius:10px 10px 0 0;cursor:pointer;border:none;background:none;position:relative;transition:background .1s}
+  .day-btn:active{background:var(--surface2)}
+  .day-name{font-size:10px;font-weight:600;letter-spacing:.5px;color:var(--muted);text-transform:uppercase;margin-bottom:4px}
+  .day-num{font-size:16px;font-weight:600;color:var(--text2);width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:50%}
+  .day-btn.today .day-num{background:var(--text);color:#fff}
+  .day-btn.selected:not(.today) .day-num{background:var(--surface2);color:var(--text);border:1.5px solid var(--border2)}
+  .day-btn.selected .day-name{color:var(--text2)}
+  .day-dot{width:4px;height:4px;border-radius:50%;background:var(--green);margin-top:3px}
+  .day-active-bar{position:absolute;bottom:0;left:4px;right:4px;height:2px;background:var(--text);border-radius:1px}
+
+  /* DAY HRV CARD */
+  .day-hrv-card{background:var(--surface);border-bottom:1px solid var(--border)}
+  .day-hrv-summary{display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;user-select:none}
+  .day-hrv-left{flex:1;min-width:0}
+  .day-hrv-label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:1px}
+  .day-hrv-value{font-size:20px;font-weight:800;color:var(--text);line-height:1.1}
+  .day-hrv-unit{font-size:12px;font-weight:500;color:var(--muted)}
+  .day-hrv-chips{display:flex;gap:5px;flex-shrink:0}
+  .day-hrv-chip{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:2px 8px;font-size:11px;font-weight:500;color:var(--text2)}
+  .day-hrv-chevron{font-size:10px;color:var(--muted);flex-shrink:0}
+  .day-hrv-form{padding:0 16px 14px}
+  .day-hrv-form-divider{height:1px;background:var(--border);margin-bottom:12px}
+  .day-hrv-result{padding:8px 10px;border-radius:8px;margin-bottom:10px;font-size:12px;font-weight:600;line-height:1.4}
+  .day-hrv-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+
+  /* HRV BANNER */
+  .hrv-banner{padding:8px 16px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .hrv-banner.red{background:var(--red-bg);border-bottom:1px solid var(--red-border);color:var(--red)}
+  .hrv-banner.green{background:var(--green-bg);border-bottom:1px solid var(--green-border);color:var(--green)}
+
+  /* WORKOUT HEADER */
+  .workout-header{background:var(--surface);padding:14px 16px 12px;border-bottom:1px solid var(--border)}
+  .workout-type-pill{display:inline-flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13px;font-weight:600;color:var(--text2);margin-bottom:6px}
+  .workout-title{font-size:28px;font-weight:800;letter-spacing:-.5px;color:var(--text);line-height:1.1}
+  .workout-meta{font-size:14px;color:var(--muted);margin-top:3px}
+  .progress-row{display:flex;align-items:center;gap:10px;margin-top:10px}
+  .progress-track{flex:1;height:5px;background:var(--surface2);border-radius:2px;overflow:hidden}
+  .progress-fill{height:100%;background:var(--green);border-radius:2px;transition:width .5s cubic-bezier(.4,0,.2,1)}
+  .progress-label{font-size:14px;font-weight:700;color:var(--muted);white-space:nowrap}
+
+  /* SECTION HEADER */
+  .section-header{padding:12px 16px 4px;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted)}
+
+  /* CONTENT */
+  .content{flex:1;overflow-y:auto;padding:8px 12px 120px;display:flex;flex-direction:column;gap:6px}
+
+  /* EXERCISE CARD */
+  .ex-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:border-color .2s,box-shadow .2s}
+  .ex-card.open{border-color:var(--text);box-shadow:0 2px 12px rgba(0,0,0,.07)}
+  .ex-card.done{border-color:var(--green-border);background:var(--green-bg)}
+  .ex-card.red-day-active{border-left:3px solid var(--red)}
+  .ex-header{display:flex;align-items:center;gap:10px;padding:14px 12px;cursor:pointer;user-select:none}
+  .ex-num{font-size:14px;font-weight:700;color:var(--muted);min-width:22px}
+  .ex-card.done .ex-num{color:var(--green)}
+  .ex-info{flex:1;min-width:0}
+  .ex-name{font-size:18px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ex-card.done .ex-name{color:var(--green)}
+  .ex-rx{font-size:14px;color:var(--muted);margin-top:2px;font-weight:500}
+  .ex-status{font-size:13px;font-weight:700;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 10px;white-space:nowrap;flex-shrink:0}
+  .ex-card.done .ex-status{background:var(--green-bg);border-color:var(--green-border);color:var(--green)}
+
+  /* SETS */
+  .sets-wrap{padding:0 12px 12px}
+  .sets-divider{height:1px;background:var(--border);margin-bottom:10px}
+  .sets-head{display:grid;grid-template-columns:28px 1fr 1fr 1fr 40px;gap:5px;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+  .sets-head span{text-align:center}
+  .set-row{display:grid;grid-template-columns:28px 1fr 1fr 1fr 40px;gap:5px;align-items:center;margin-bottom:6px}
+  .set-num{font-size:16px;font-weight:700;color:var(--muted);text-align:center}
+  .set-input{background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:12px 4px;font-size:20px;font-weight:700;color:var(--text);font-family:'Outfit',sans-serif;text-align:center;width:100%;outline:none;transition:border-color .15s;-webkit-appearance:none}
+  .set-input:focus{border-color:var(--text);background:var(--surface)}
+  .set-input.locked{border-color:var(--green-border);color:var(--green);background:var(--green-bg)}
+  .set-input::placeholder{color:var(--border2)}
+  .confirm-btn{width:40px;height:48px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--muted);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+  .confirm-btn.confirmed{background:var(--green-bg);border-color:var(--green-border);color:var(--green)}
+  .confirm-btn:active{transform:scale(.9)}
+
+  /* LOG FORMS */
+  .sets-log-wrap{padding:0 12px 8px;display:flex;flex-direction:column;gap:8px}
+  .set-entry{background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;overflow:hidden;transition:border-color .2s}
+  .set-entry.confirmed{background:var(--green-bg);border-color:var(--green-border)}
+  .set-entry-header{display:flex;align-items:center;gap:10px;padding:10px 12px}
+  .set-entry-num{font-size:15px;font-weight:700;color:var(--text2);min-width:44px}
+  .set-entry.confirmed .set-entry-num{color:var(--green)}
+  .set-entry-summary{flex:1;font-size:14px;font-weight:600;color:var(--green)}
+  .set-entry-btn{padding:7px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);font-family:'Outfit',sans-serif;font-size:13px;font-weight:700;color:var(--text2);cursor:pointer;flex-shrink:0;transition:all .15s}
+  .set-entry-btn.confirmed{background:var(--green-bg);border-color:var(--green-border);color:var(--green)}
+  .set-entry-btn:active{transform:scale(.95)}
+  .set-confirmed-bar{padding:8px 12px;font-size:14px;font-weight:600;color:var(--green);text-align:center}
+  .log-form-row{display:flex;gap:8px;padding:0 12px 12px}
+  .log-field{flex:1;display:flex;flex-direction:column;gap:4px}
+  .log-field-wide{flex:2}
+  .log-field-label{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+  .log-field-input{background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:11px 6px;font-size:20px;font-weight:700;color:var(--text);font-family:'Outfit',sans-serif;text-align:center;width:100%;outline:none;-webkit-appearance:none;transition:border-color .15s}
+  .log-field-input:focus{border-color:var(--text)}
+  .log-field-input.locked{border-color:var(--green-border);color:var(--green);background:var(--green-bg)}
+  .log-field-input::placeholder{color:var(--border2)}
+  .log-mobility{padding:0 12px 12px}
+  .log-mobility-btn{width:100%;padding:16px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface);font-family:'Outfit',sans-serif;font-size:16px;font-weight:700;color:var(--text2);cursor:pointer;transition:all .15s}
+  .log-mobility-btn.done{background:var(--green-bg);border-color:var(--green-border);color:var(--green)}
+  .mobility-entry{padding:0 12px 12px}
+
+  /* NOTES & COACHING */
+  .coaching-note{margin:0 12px 10px;padding:10px 12px;background:var(--blue-bg);border-radius:8px;font-size:14px;color:var(--blue);line-height:1.5;font-weight:500}
+  .hrv-mod-note{margin:0 12px 10px;padding:10px 12px;background:var(--red-bg);border-radius:8px;font-size:14px;color:var(--red);line-height:1.5;font-weight:500}
+  .tempo-note{margin:0 12px 10px;padding:10px 12px;background:var(--amber-bg);border-radius:8px;font-size:14px;color:var(--amber);line-height:1.5;font-weight:500}
+  .note-wrap{padding:0 12px 10px}
+  .note-input{width:100%;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;font-size:15px;color:var(--text2);font-family:'Outfit',sans-serif;outline:none;resize:none;line-height:1.5}
+  .note-input::placeholder{color:var(--border2)}
+  .note-input:focus{border-color:var(--border2)}
+
+  /* COMPLETE SESSION FORM */
+  .complete-form{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:4px}
+  .complete-form-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px}
+  .complete-form-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+  .cf-field{display:flex;flex-direction:column;gap:3px}
+  .cf-label{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+  .cf-input{background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:8px 10px;font-size:14px;font-weight:500;color:var(--text);font-family:'Outfit',sans-serif;outline:none;-webkit-appearance:none}
+  .cf-input:focus{border-color:var(--text)}
+
+  /* BOTTOM NAV */
+  .bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:430px;background:var(--surface);border-top:1px solid var(--border);display:flex;padding:8px 0 20px}
+  .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;border:none;background:none;padding:4px 0}
+  .nav-icon{font-size:19px;line-height:1;filter:grayscale(1) opacity(.4);transition:filter .15s}
+  .nav-item.active .nav-icon{filter:none}
+  .nav-label{font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.3px}
+  .nav-item.active .nav-label{color:var(--text)}
+
+  /* SAVE BAR */
+  .save-bar{position:fixed;bottom:72px;left:50%;transform:translateX(-50%);width:430px;padding:8px 12px;background:linear-gradient(to top,var(--bg) 60%,transparent);display:flex;gap:8px}
+  .btn{padding:14px 16px;border-radius:11px;font-family:'Outfit',sans-serif;font-size:16px;font-weight:700;cursor:pointer;transition:all .15s;border:none;letter-spacing:.2px}
+  .btn:active{transform:scale(.97)}
+  .btn-ghost{flex:1;background:var(--surface);color:var(--text2);border:1.5px solid var(--border)}
+  .btn-primary{flex:2.5;background:var(--text);color:#fff}
+  .btn-success{flex:2.5;background:var(--green);color:#fff}
+
+  /* TABS */
+  .filter-row{display:flex;gap:6px;overflow-x:auto;padding:0 0 2px;-ms-overflow-style:none;scrollbar-width:none}
+  .filter-row::-webkit-scrollbar{display:none}
+  .filter-pill{flex-shrink:0;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;transition:all .15s;white-space:nowrap}
+  .filter-pill.active{background:var(--text);color:#fff;border-color:var(--text)}
+
+  /* HISTORY */
+  .section-title{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;padding:6px 2px 4px}
+  .hist-search{width:100%;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;font-size:15px;font-family:'Outfit',sans-serif;color:var(--text);outline:none}
+  .hist-search:focus{border-color:var(--border2)}
+  .hist-search::placeholder{color:var(--muted)}
+  .hist-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:6px;transition:border-color .2s}
+  .hist-card.open{border-color:var(--border2)}
+  .hist-card-header{display:flex;align-items:center;gap:10px;padding:13px 14px;cursor:pointer;user-select:none}
+  .hist-card-info{flex:1;min-width:0}
+  .hist-card-name{font-size:16px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hist-card-meta{font-size:12px;color:var(--muted);margin-top:2px;font-weight:400}
+  .hist-card-chevron{font-size:10px;color:var(--muted);flex-shrink:0}
+  .hist-sessions{padding:0 14px 12px}
+  .hist-sessions-divider{height:1px;background:var(--border);margin-bottom:10px}
+  .hist-session{margin-bottom:12px}
+  .hist-session:last-child{margin-bottom:0}
+  .hist-session-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+  .hist-session-date{font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px}
+  .hist-session-best{font-size:13px;font-weight:700;color:var(--green)}
+  .hist-set-list{display:flex;flex-direction:column;gap:3px}
+  .hist-set-row{display:flex;justify-content:space-between;align-items:center;padding:5px 10px;background:var(--surface2);border-radius:7px}
+  .hist-set-num{font-size:12px;font-weight:600;color:var(--muted)}
+  .hist-set-val{font-size:13px;font-weight:600;color:var(--text2)}
+
+  /* PRs */
+  .pr-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .pr-name{font-size:14px;font-weight:700;color:var(--text)}
+  .pr-cat{font-size:11px;color:var(--muted);margin-top:2px}
+  .pr-stats{display:flex;gap:8px;align-items:center;flex-shrink:0}
+  .pr-stat{text-align:center}
+  .pr-stat-val{font-size:16px;font-weight:800;color:var(--text);line-height:1}
+  .pr-stat-label{font-size:9px;font-weight:600;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-top:2px}
+  .pr-divider{width:1px;height:28px;background:var(--border)}
+
+  /* RACES */
+  .race-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 14px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between}
+  .race-name{font-size:14px;font-weight:700;color:var(--text)}
+  .race-meta{font-size:11px;color:var(--muted);margin-top:2px}
+  .race-type-pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
+  .race-type-anchor{background:#fdf0ef;color:#d93025}
+  .race-type-target{background:#eef4fd;color:#1a6fe8}
+  .race-type-training{background:#f0f0f2;color:#555560}
+  .race-countdown{text-align:right;flex-shrink:0}
+  .race-days{font-size:28px;font-weight:800;color:var(--text);line-height:1}
+  .race-days-label{font-size:10px;font-weight:600;color:var(--muted);letter-spacing:1px;text-transform:uppercase}
+
+  /* HRV TAB */
+  .hrv-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:8px}
+  .hrv-form-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+  .hrv-field{display:flex;flex-direction:column;gap:3px}
+  .hrv-label{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+  .hrv-input{background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:9px 10px;font-size:15px;font-weight:600;color:var(--text);font-family:'Outfit',sans-serif;outline:none;-webkit-appearance:none;width:100%}
+  .hrv-input:focus{border-color:var(--text)}
+  .hrv-history-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px}
+  .hrv-history-row:last-child{border-bottom:none}
+  .hrv-history-date{color:var(--muted)}
+  .hrv-history-val{font-weight:700;color:var(--text)}
+  .hrv-red-chip{background:var(--red-bg);color:var(--red);border-radius:6px;padding:1px 6px;font-size:10px;font-weight:700}
+  .hrv-green-chip{background:var(--green-bg);color:var(--green);border-radius:6px;padding:1px 6px;font-size:10px;font-weight:700}
+
+  /* BENCHMARKS */
+  .bm-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:8px}
+  .bm-card-header{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;cursor:pointer;user-select:none}
+  .bm-num{font-size:20px;font-weight:900;min-width:26px;line-height:1;margin-top:1px}
+  .bm-info{flex:1;min-width:0}
+  .bm-title{font-size:14px;font-weight:700;color:var(--text)}
+  .bm-subtitle{font-size:11px;color:var(--muted);margin-top:1px}
+  .bm-day-badge{display:inline-block;margin-top:4px;font-size:10px;font-weight:600;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:2px 7px}
+  .bm-log-btn{flex-shrink:0;padding:4px 10px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface2);font-family:'Outfit',sans-serif;font-size:11px;font-weight:700;color:var(--text2);cursor:pointer;margin-top:2px}
+  .bm-body{padding:0 14px 12px}
+  .bm-divider{height:1px;background:var(--border);margin-bottom:8px}
+  .bm-metric-label{font-size:11px;color:var(--muted);margin-bottom:6px;font-style:italic}
+  .bm-result-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .bm-result-val{font-size:20px;font-weight:800;color:var(--text);line-height:1}
+  .bm-result-meta{font-size:11px;color:var(--muted)}
+  .bm-no-result{font-size:12px;color:var(--muted);font-style:italic;margin-bottom:8px}
+  .bm-history-label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+  .bm-history-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px}
+  .bm-history-date{color:var(--muted)}
+  .bm-history-val{font-weight:600;color:var(--text2)}
+  .bm-targets-label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin:8px 0 4px}
+  .bm-target-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px}
+  .bm-target-row:last-child{border-bottom:none}
+  .bm-target-phase{color:var(--muted);font-weight:500}
+  .bm-target-val{color:var(--text2);font-weight:600;text-align:right;max-width:65%}
+  .bm-form{margin-top:4px}
+  .bm-form-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+  .bm-field{display:flex;flex-direction:column;gap:3px}
+  .bm-field-label{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+  .bm-field-input{background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:8px 10px;font-size:14px;font-weight:500;color:var(--text);font-family:'Outfit',sans-serif;outline:none;width:100%;-webkit-appearance:none}
+  .bm-field-input:focus{border-color:var(--text)}
+  .bm-field-input::placeholder{color:var(--border2)}
+  .bm-asym-preview{font-size:12px;font-weight:600;color:var(--blue);background:var(--blue-bg);border-radius:8px;padding:6px 10px;margin-bottom:8px;text-align:center}
+
+  /* LOADING / EMPTY */
+  .center-msg{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:10px;text-align:center}
+  .center-icon{font-size:36px;opacity:.3}
+  .center-title{font-size:18px;font-weight:700;color:var(--text)}
+  .center-sub{font-size:13px;color:var(--muted);line-height:1.6}
+  .spinner{width:28px;height:28px;border:2px solid var(--border);border-top-color:var(--text);border-radius:50%;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* TOAST */
+  .toast{position:fixed;bottom:88px;left:50%;transform:translateX(-50%);background:var(--text);color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:600;white-space:nowrap;z-index:200;animation:toastIn .25s ease,toastOut .25s ease 1.75s forwards}
+  @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+  @keyframes toastOut{to{opacity:0;transform:translateX(-50%) translateY(-6px)}}
+`;
+
+// ─── BENCHMARK DEFINITIONS ────────────────────────────────────────────────────
+
+const BENCHMARKS = [
+  { num:1, title:"Posterior Chain Endurance", subtitle:"GHD Sorenson Hold to failure", day:"1st Monday", metric:"Time to failure", color:"#1a6fe8",
+    targets:["Establish baseline","+ 25% by Sept","+ 50% by Feb","3+ min by race month"] },
+  { num:2, title:"Eccentric Descent Durability", subtitle:"Weighted Step-Down Negatives max reps", day:"1st Tuesday", metric:"Total reps to form failure", color:"#e87020",
+    targets:["Establish baseline","+ 20% by Sept","+ 20% from Phase 1","20+ reps Phase 3 load"] },
+  { num:3, title:"Aerobic Engine", subtitle:"SkiErg 2000m for time", day:"1st Wednesday", metric:"Total time (faster = better)", color:"#1a9e5c",
+    targets:["Establish baseline","– 5% by Sept","– 10% by Feb","– 15% by race month"] },
+  { num:4, title:"Ankle & Lower-Leg Resilience", subtitle:"Single-Leg BOSU Balance to failure", day:"1st Thursday", metric:"Time each leg + asymmetry %", color:"#6b3fa0",
+    targets:["Establish baseline","+ 30%, under 20% asym","+ 60%, under 15% asym","+ 80%, under 10% asym"] },
+  { num:5, title:"Vertical Capacity", subtitle:"Office Stair Climb — 5 rounds timed", day:"1st Friday", metric:"Total time for 5 rounds", color:"#d93025",
+    targets:["Establish @ 30 lbs","– 8% by Sept","– 15% @ 35 lbs by Feb","– 20% @ 40 lbs by race month"] },
+  { num:6, title:"Load-Bearing Endurance", subtitle:"10-Mile Trail Ruck timed", day:"1st Saturday", metric:"Total time", color:"#7c6a4a",
+    targets:["Establish @ 30 lbs","– 5% by Sept","– 10% @ 35 lbs by Feb","– 12% @ 40 lbs by race month"] },
+];
+
+// ─── EXERCISE CARD ────────────────────────────────────────────────────────────
+
+// Shared input helper
+function LogInput({ label, value, onChange, type="number", inputMode="numeric", placeholder="—", locked, wide }) {
+  return (
+    <div className={`log-field${wide?" log-field-wide":""}`}>
+      <div className="log-field-label">{label}</div>
+      <input
+        className={`log-field-input${locked?" locked":""}`}
+        type={type} inputMode={inputMode} placeholder={placeholder}
+        value={value} readOnly={locked}
+        onChange={e=>onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
+// Per-type form renderers — each returns { fields JSX, summary string, savePayload fn }
+function useSetForm(resultType, existingResult) {
+  const ex = existingResult || {};
+  const init = () => {
+    switch(resultType) {
+      case "weighted_reps":   return { reps:ex.reps_completed?String(ex.reps_completed):"", weight:ex.weight_lbs?String(ex.weight_lbs):"", rpe:ex.rpe?String(ex.rpe):"" };
+      case "bodyweight_reps": return { reps:ex.reps_completed?String(ex.reps_completed):"", rpe:ex.rpe?String(ex.rpe):"" };
+      case "timed_hold":      return { time:ex.duration_seconds?String(ex.duration_seconds):"", rpe:ex.rpe?String(ex.rpe):"" };
+      case "bilateral_timed": return { left:ex.duration_seconds?String(ex.duration_seconds):"", right:"", rpe:ex.rpe?String(ex.rpe):"" };
+      case "distance_carry":  return { distance:ex.reps_completed?String(ex.reps_completed):"", weight:ex.weight_lbs?String(ex.weight_lbs):"", rpe:ex.rpe?String(ex.rpe):"" };
+      case "stair_climb":    return { stories:ex.reps_completed?String(ex.reps_completed):"", mins:ex.duration_seconds?String(Math.floor(ex.duration_seconds/60)):"", secs:ex.duration_seconds?String(ex.duration_seconds%60):"", rpe:ex.rpe?String(ex.rpe):"" };
+      case "cardio_time":     return { mins:ex.duration_seconds?String(Math.floor(ex.duration_seconds/60)):"", secs:ex.duration_seconds?String(ex.duration_seconds%60):"", rpe:ex.rpe?String(ex.rpe):"" };
+      case "ruck":            return { hrs:ex.duration_seconds?String(Math.floor(ex.duration_seconds/3600)):"", mins:ex.duration_seconds?String(Math.floor((ex.duration_seconds%3600)/60)):"", weight:ex.weight_lbs?String(ex.weight_lbs):"", rpe:ex.rpe?String(ex.rpe):"" };
+      case "mobility":        return { done: !!ex.reps_completed };
+      default:                return { reps:"", weight:"", rpe:"" };
+    }
+  };
+  const [data, setData] = useState(init);
+  const set = (k,v) => setData(d=>({...d,[k]:v}));
+
+  const toPayload = () => {
+    switch(resultType) {
+      case "weighted_reps":   return { reps_completed:data.reps?parseInt(data.reps):null, weight_lbs:data.weight?parseFloat(data.weight):null, rpe:data.rpe?parseInt(data.rpe):null };
+      case "bodyweight_reps": return { reps_completed:data.reps?parseInt(data.reps):null, rpe:data.rpe?parseInt(data.rpe):null };
+      case "timed_hold":      return { duration_seconds:data.time?parseInt(data.time):null, rpe:data.rpe?parseInt(data.rpe):null };
+      case "bilateral_timed": return { duration_seconds:data.left?parseInt(data.left):null, weight_lbs:data.right?parseFloat(data.right):null, rpe:data.rpe?parseInt(data.rpe):null };
+      case "distance_carry":  return { reps_completed:data.distance?parseInt(data.distance):null, weight_lbs:data.weight?parseFloat(data.weight):null, rpe:data.rpe?parseInt(data.rpe):null };
+      case "stair_climb":     return { reps_completed:data.stories?parseInt(data.stories):null, duration_seconds:(parseInt(data.mins||0)*60)+parseInt(data.secs||0)||null, rpe:data.rpe?parseInt(data.rpe):null };
+      case "cardio_time":     return { duration_seconds:(parseInt(data.mins||0)*60)+parseInt(data.secs||0)||null, rpe:data.rpe?parseInt(data.rpe):null };
+      case "ruck":            return { duration_seconds:(parseInt(data.hrs||0)*3600)+(parseInt(data.mins||0)*60)||null, weight_lbs:data.weight?parseFloat(data.weight):null, rpe:data.rpe?parseInt(data.rpe):null };
+      case "mobility":        return { reps_completed: data.done?1:0 };
+      default:                return {};
+    }
+  };
+
+  const summary = () => {
+    switch(resultType) {
+      case "weighted_reps":   return [data.reps&&`${data.reps} reps`, data.weight&&`${data.weight} lb`, data.rpe&&`RPE ${data.rpe}`].filter(Boolean).join(" · ");
+      case "bodyweight_reps": return [data.reps&&`${data.reps} reps`, data.rpe&&`RPE ${data.rpe}`].filter(Boolean).join(" · ");
+      case "timed_hold":      return [data.time&&`${data.time}s`, data.rpe&&`RPE ${data.rpe}`].filter(Boolean).join(" · ");
+      case "bilateral_timed": return [data.left&&`L ${data.left}s`, data.right&&`R ${data.right}s`, data.rpe&&`RPE ${data.rpe}`].filter(Boolean).join(" · ");
+      case "distance_carry":  return [data.distance&&`${data.distance}m`, data.weight&&`${data.weight} lb`, data.rpe&&`RPE ${data.rpe}`].filter(Boolean).join(" · ");
+      case "stair_climb":     return [data.stories&&`${data.stories} stories`, data.mins&&`${data.mins}:${String(data.secs||0).padStart(2,"0")}`, data.rpe&&`RPE ${data.rpe}`].filter(Boolean).join(" · ");
+      case "cardio_time":     return [data.mins&&data.secs!==undefined&&`${data.mins}:${String(data.secs).padStart(2,"0")}`, data.rpe&&`RPE ${data.rpe}`].filter(Boolean).join(" · ");
+      case "ruck":            return [data.hrs&&`${data.hrs}h ${data.mins}m`, data.weight&&`${data.weight} lb`, data.rpe&&`RPE ${data.rpe}`].filter(Boolean).join(" · ");
+      case "mobility":        return data.done?"✓ Done":"";
+      default:                return "";
+    }
+  };
+
+  const isEmpty = () => {
+    switch(resultType) {
+      case "mobility": return false;
+      case "weighted_reps": return !data.reps && !data.weight;
+      case "bodyweight_reps": return !data.reps;
+      case "timed_hold": return !data.time;
+      case "bilateral_timed": return !data.left && !data.right;
+      case "distance_carry": return !data.distance;
+      case "stair_climb": return !data.stories && !data.mins;
+      case "cardio_time": return !data.mins && !data.secs;
+      case "ruck": return !data.hrs && !data.mins;
+      default: return true;
+    }
+  };
+
+  return { data, set, toPayload, summary, isEmpty };
+}
+
+function SetForm({ resultType, data, set, locked }) {
+  const inp = (label, key, opts={}) => (
+    <LogInput label={label} value={data[key]||""} onChange={v=>set(key,v)}
+      locked={locked} type={opts.type||"number"} inputMode={opts.inputMode||"numeric"}
+      placeholder={opts.placeholder||"—"} wide={opts.wide}/>
+  );
+
+  if (resultType==="mobility") return (
+    <div className="log-mobility">
+      <button
+        className={`log-mobility-btn${data.done?" done":""}`}
+        onClick={()=>!locked&&set("done",!data.done)}
+      >
+        {data.done?"✓ Done — tap to undo":"Tap to mark done"}
+      </button>
+    </div>
+  );
+
+  if (resultType==="weighted_reps") return (
+    <div className="log-form-row">
+      {inp("Reps","reps")}
+      {inp("Weight (lb)","weight",{inputMode:"decimal"})}
+      {inp("RPE","rpe")}
+    </div>
+  );
+
+  if (resultType==="bodyweight_reps") return (
+    <div className="log-form-row">
+      {inp("Reps","reps",{wide:true})}
+      {inp("RPE","rpe")}
+    </div>
+  );
+
+  if (resultType==="timed_hold") return (
+    <div className="log-form-row">
+      {inp("Seconds","time",{wide:true})}
+      {inp("RPE","rpe")}
+    </div>
+  );
+
+  if (resultType==="bilateral_timed") return (
+    <div className="log-form-row">
+      {inp("Left (sec)","left")}
+      {inp("Right (sec)","right")}
+      {inp("RPE","rpe")}
+    </div>
+  );
+
+  if (resultType==="distance_carry") return (
+    <div className="log-form-row">
+      {inp("Distance (m)","distance")}
+      {inp("Weight (lb)","weight",{inputMode:"decimal"})}
+      {inp("RPE","rpe")}
+    </div>
+  );
+
+  if (resultType==="stair_climb") return (
+    <div className="log-form-row">
+      {inp("Stories","stories",{wide:true})}
+      {inp("Minutes","mins")}
+      {inp("Seconds","secs")}
+      {inp("RPE","rpe")}
+    </div>
+  );
+
+  if (resultType==="cardio_time") return (
+    <div className="log-form-row">
+      {inp("Minutes","mins",{wide:true})}
+      {inp("Seconds","secs")}
+      {inp("RPE","rpe")}
+    </div>
+  );
+
+  if (resultType==="ruck") return (<>
+    <div className="log-form-row">
+      {inp("Hours","hrs")}
+      {inp("Minutes","mins")}
+      {inp("Pack (lb)","weight",{inputMode:"decimal"})}
+      {inp("RPE","rpe")}
+    </div>
+  </>);
+
+  return null;
+}
+
+// Single set log entry with confirm
+function SetEntry({ setNum, resultType, existingResult, sessionId, workoutId, onConfirmed, isMobility }) {
+  const { data, set, toPayload, summary, isEmpty } = useSetForm(resultType, existingResult);
+  const [confirmed, setConfirmed] = useState(!!existingResult);
+  const [saving, setSaving] = useState(false);
+
+  const handleConfirm = async () => {
+    if (confirmed) { setConfirmed(false); return; }
+    if (!sessionId) return;
+    setSaving(true);
+    try {
+      const payload = toPayload();
+      await saveResult(sessionId, workoutId, setNum, payload.reps_completed, payload.weight_lbs, payload.duration_seconds, payload.rpe);
+      setConfirmed(true);
+      onConfirmed();
+    } catch(e){ console.error(e); }
+    setSaving(false);
+  };
+
+  if (isMobility) return (
+    <div className="mobility-entry">
+      <SetForm resultType="mobility" data={data} set={set} locked={confirmed}/>
+      {!confirmed && (
+        <button className="btn btn-primary" style={{width:"100%",marginTop:8,padding:"12px"}}
+          onClick={handleConfirm} disabled={saving}>
+          {saving?"Saving...":"Save"}
+        </button>
+      )}
+      {confirmed && <div className="set-confirmed-bar">✓ Logged</div>}
+    </div>
+  );
+
+  return (
+    <div className={`set-entry${confirmed?" confirmed":""}`}>
+      <div className="set-entry-header">
+        <div className="set-entry-num">Set {setNum}</div>
+        {confirmed && <div className="set-entry-summary">{summary()}</div>}
+        <button className={`set-entry-btn${confirmed?" confirmed":""}`}
+          onClick={handleConfirm} disabled={saving}>
+          {saving?"...":confirmed?"✓ Done":"Log"}
+        </button>
+      </div>
+      {!confirmed && (
+        <SetForm resultType={resultType} data={data} set={set} locked={false}/>
+      )}
+    </div>
+  );
+}
+
+function ExerciseCard({ workout, index, phase, redDay, sessionId, existingResults, onComplete }) {
+  const exercise = workout.exercises || {};
+  const rx = getPrescription(workout, phase);
+  const numSets = rx.sets || (exercise.result_type==="mobility"?1:3);
+  const resultType = exercise.result_type || "weighted_reps";
+  const isMobility = resultType==="mobility";
+
+  const [open, setOpen] = useState(false);
+  const [confirmedSets, setConfirmedSets] = useState(()=>{
+    const s = new Set();
+    existingResults.filter(r=>r.workout_id===workout.id).forEach(r=>s.add(r.set_number));
+    return s;
+  });
+
+  const handleSetConfirmed = useCallback((setNum)=>{
+    setConfirmedSets(prev=>{
+      const next = new Set([...prev, setNum]);
+      if (next.size>=numSets) onComplete(workout.id);
+      return next;
+    });
+  },[numSets, workout.id, onComplete]);
+
+  const allDone = confirmedSets.size>=numSets;
+  const showRedMod = redDay && workout.hrv_modification && workout.hrv_modification!=="Always perform";
+
+  const statusLabel = ()=>{
+    if (allDone) return "✓ Done";
+    if (isMobility) return confirmedSets.size>0?"✓ Done":"Tap";
+    return confirmedSets.size>0?`${confirmedSets.size}/${numSets}`:rx.sets?`${rx.sets} sets`:"Log";
+  };
+
+  return (
+    <div className={`ex-card${open?" open":""}${allDone?" done":""}${showRedMod?" red-day-active":""}`}>
+      <div className="ex-header" onClick={()=>setOpen(o=>!o)}>
+        <div className="ex-num">{index+1}</div>
+        <div className="ex-info">
+          <div className="ex-name">{exercise.name||workout.notes}</div>
+          <div className="ex-rx">{formatPrescription(rx)}</div>
+        </div>
+        <div className="ex-status">{statusLabel()}</div>
+      </div>
+
+      {open && <>
+        <div className="sets-divider" style={{margin:"0 12px"}}/>
+        {showRedMod && <div className="hrv-mod-note">🔴 Red day: {workout.hrv_modification}</div>}
+        {exercise.coaching_notes && <div className="coaching-note">💡 {exercise.coaching_notes}</div>}
+        {rx.tempo && <div className="tempo-note">⏱ {rx.tempo}</div>}
+
+        <div className="sets-log-wrap">
+          {Array.from({length:numSets},(_,i)=>{
+            const setNum = i+1;
+            const existing = existingResults.find(r=>r.workout_id===workout.id&&r.set_number===setNum);
+            return (
+              <SetEntry key={setNum} setNum={setNum} resultType={resultType}
+                existingResult={existing} sessionId={sessionId} workoutId={workout.id}
+                onConfirmed={()=>handleSetConfirmed(setNum)} isMobility={isMobility}/>
+            );
+          })}
+        </div>
+
+        <div className="note-wrap">
+          <textarea className="note-input" rows={2} placeholder="Notes..."/>
+        </div>
+      </>}
+    </div>
+  );
+}
+
+// ─── DAY HRV CARD ────────────────────────────────────────────────────────────
+
+function DayHRVCard({ dateStr, isToday, threshold, onSaved }) {
+  const [expanded, setExpanded] = useState(false);
+  const [form, setForm] = useState({ hrv:"", hr:"", sleep:"", energy:"", notes:"" });
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState(null);
+  const [localHrv, setLocalHrv] = useState(null);
+  const [loadingHrv, setLoadingHrv] = useState(true);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  useEffect(()=>{
+    setLocalHrv(null);
+    setResult(null);
+    setExpanded(false);
+    setLoadingHrv(true);
+    db(`hrv?date=eq.${dateStr}&select=*&limit=1`)
+      .then(res=>{
+        const h = res?.[0] || null;
+        setLocalHrv(h);
+        setExpanded(!h);
+      })
+      .catch(console.error)
+      .finally(()=>setLoadingHrv(false));
+  },[dateStr]);
+
+  const handleSave = async () => {
+    if (!form.hrv) return;
+    setSaving(true);
+    try {
+      const res = await logHrv(dateStr, form.hrv, form.hr, form.sleep, form.energy, form.notes, threshold);
+      setResult(res);
+      setLocalHrv({ morning_hrv:parseInt(form.hrv), red_day:res.redDay, resting_hr:form.hr?parseInt(form.hr):null, sleep_hours:form.sleep?parseFloat(form.sleep):null });
+      setExpanded(false);
+      onSaved && onSaved();
+    } catch(e){ console.error(e); }
+    setSaving(false);
+  };
+
+  const redDay = localHrv?.red_day || false;
+
+  if (loadingHrv) return (
+    <div className="day-hrv-card">
+      <div className="day-hrv-summary">
+        <div className="day-hrv-left">
+          <div className="day-hrv-label">HRV</div>
+          <div className="day-hrv-value" style={{color:"var(--muted)"}}>—</div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="day-hrv-card">
+      <div className="day-hrv-summary" onClick={()=>setExpanded(o=>!o)}>
+        <div className="day-hrv-left">
+          <div className="day-hrv-label">HRV</div>
+          {localHrv ? (
+            <div className="day-hrv-value" style={{color: redDay?"var(--red)":"var(--green)"}}>
+              {localHrv.morning_hrv}
+              <span className="day-hrv-unit"> {redDay?"🔴 Red Day":"✓ Green"}</span>
+            </div>
+          ) : (
+            <div className="day-hrv-value" style={{color:"var(--muted)"}}>
+              — <span className="day-hrv-unit">Tap to log</span>
+            </div>
+          )}
+        </div>
+        {localHrv && (
+          <div className="day-hrv-chips">
+            {localHrv.resting_hr && <span className="day-hrv-chip">{localHrv.resting_hr} bpm</span>}
+            {localHrv.sleep_hours && <span className="day-hrv-chip">{localHrv.sleep_hours}h sleep</span>}
+          </div>
+        )}
+        <div className="day-hrv-chevron">{expanded?"▲":"▼"}</div>
+      </div>
+
+      {expanded && (
+        <div className="day-hrv-form">
+          <div className="day-hrv-form-divider"/>
+          {result && (
+            <div className="day-hrv-result" style={{background:result.redDay?"var(--red-bg)":"var(--green-bg)",color:result.redDay?"var(--red)":"var(--green)"}}>
+              {result.redDay ? `🔴 Red day — HRV below 7-day avg of ${result.avg7}. Modified sessions active.` : `✓ Green day — HRV vs 7-day avg ${result.avg7}. Full session.`}
+            </div>
+          )}
+          <div className="day-hrv-grid">
+            <div className="hrv-field">
+              <div className="hrv-label">Morning HRV</div>
+              <input className="hrv-input" type="number" inputMode="numeric" placeholder="e.g. 62"
+                value={form.hrv} onChange={e=>setF("hrv",e.target.value)}/>
+            </div>
+            <div className="hrv-field">
+              <div className="hrv-label">Resting HR</div>
+              <input className="hrv-input" type="number" inputMode="numeric" placeholder="e.g. 48"
+                value={form.hr} onChange={e=>setF("hr",e.target.value)}/>
+            </div>
+            <div className="hrv-field">
+              <div className="hrv-label">Sleep (hrs)</div>
+              <input className="hrv-input" type="number" inputMode="decimal" placeholder="e.g. 7.5"
+                value={form.sleep} onChange={e=>setF("sleep",e.target.value)}/>
+            </div>
+            <div className="hrv-field">
+              <div className="hrv-label">Energy (1–5)</div>
+              <input className="hrv-input" type="number" inputMode="numeric" placeholder="e.g. 3"
+                value={form.energy} onChange={e=>setF("energy",e.target.value)}/>
+            </div>
+          </div>
+          <div className="hrv-field" style={{marginBottom:10}}>
+            <div className="hrv-label">Notes</div>
+            <textarea className="hrv-input note-input" rows={2} style={{resize:"none"}}
+              placeholder="Sleep quality, stress, travel, alcohol..."
+              value={form.notes} onChange={e=>setF("notes",e.target.value)}/>
+          </div>
+          <button className="btn btn-primary" style={{width:"100%",padding:"11px"}}
+            onClick={handleSave} disabled={saving||!form.hrv}>
+            {saving?"Saving...":"Log HRV"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── TODAY TAB ────────────────────────────────────────────────────────────────
+
+function TodayTab({ selectedDate, todayDate, appState }) {
+  const dayName = DAY_NAMES[selectedDate.getDay()];
+  const dateStr = toDateStr(selectedDate);
+  const isToday = dateStr === todayDate;
+  const { settings, hrv } = appState;
+  const phase = settings.current_phase;
+  const redDay = hrv?.red_day || false;
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [workouts, setWorkouts] = useState([]);
+  const [sessionId, setSessionId] = useState(null);
+  const [existingResults, setExistingResults] = useState([]);
+  const [completedIds, setCompletedIds] = useState(new Set());
+  const [showComplete, setShowComplete] = useState(false);
+  const [completeForm, setCompleteForm] = useState({duration:"",rpe:"",notes:""});
+  const [finishing, setFinishing] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  useEffect(()=>{
+    setLoading(true); setError(null); setWorkouts([]); setCompletedIds(new Set()); setShowComplete(false);
+    fetchWorkoutsForDay(dayName).then(async ws=>{
+      setWorkouts(ws);
+      if (ws.length && isToday) {
+        const sessionName = ws[0]?.session_name || dayName;
+        const sess = await fetchOrCreateSession(dateStr, dayName, sessionName, phase, redDay);
+        setSessionId(sess?.id||null);
+        if (sess?.id) {
+          const res = await fetchResultsForSession(sess.id);
+          setExistingResults(res);
+          const done = new Set();
+          ws.forEach(w=>{
+            const rx = getPrescription(w, phase);
+            const wRes = res.filter(r=>r.workout_id===w.id);
+            if (wRes.length>=(rx.sets||3)) done.add(w.id);
+          });
+          setCompletedIds(done);
+        }
+      }
+    }).catch(e=>setError(e.message)).finally(()=>setLoading(false));
+  },[dateStr]);
+
+  const handleComplete = useCallback((wId)=>setCompletedIds(prev=>new Set([...prev,wId])),[]);
+
+  const showToast = (msg)=>{ setToast(msg); setTimeout(()=>setToast(null),2000); };
+
+  const handleFinish = async () => {
+    if (!sessionId) return;
+    setFinishing(true);
+    try {
+      await completeSession(sessionId, completeForm.duration, completeForm.rpe, completeForm.notes);
+      showToast("Workout saved! 💪");
+      setShowComplete(false);
+    } catch(e){ console.error(e); }
+    setFinishing(false);
+  };
+
+  const sections = [...new Set(workouts.map(w=>w.section||"Main Work"))];
+  const totalWorkouts = workouts.length;
+  const doneCount = completedIds.size;
+  const allDone = totalWorkouts>0 && doneCount>=totalWorkouts;
+
+  return (<>
+    {/* ── INLINE HRV CARD ── */}
+    <DayHRVCard dateStr={dateStr} isToday={isToday} threshold={appState.settings.hrv_red_day_threshold_pct} onSaved={()=>{ appState.onHrvSaved && appState.onHrvSaved(); }} />
+
+    {workouts.length>0 && (
+      <div className="workout-header">
+        <div className="workout-type-pill">{dayName} · {phase}</div>
+        <div className="workout-title">{workouts[0]?.session_name||dayName}</div>
+        <div className="workout-meta">{totalWorkouts} exercises</div>
+        <div className="progress-row">
+          <div className="progress-track">
+            <div className="progress-fill" style={{width:`${totalWorkouts?(doneCount/totalWorkouts)*100:0}%`}}/>
+          </div>
+          <div className="progress-label">{doneCount}/{totalWorkouts}</div>
+        </div>
+      </div>
+    )}
+
+    <div className="content">
+      {loading && <div className="center-msg"><div className="spinner"/><div className="center-sub">Loading workout...</div></div>}
+      {error && <div className="center-msg"><div className="center-icon">⚠️</div><div className="center-title">Connection Error</div><div className="center-sub">{error}</div></div>}
+      {!loading && !error && workouts.length===0 && (
+        <div className="center-msg">
+          <div className="center-icon">🌿</div>
+          <div className="center-title">{isToday?"Rest Day":dayName}</div>
+          <div className="center-sub">No session scheduled.<br/>Rest, recover, come back stronger.</div>
+        </div>
+      )}
+
+      {sections.map(section=>{
+        const sectionWorkouts = workouts.filter(w=>(w.section||"Main Work")===section);
+        return (
+          <div key={section}>
+            <div className="section-header">{section}</div>
+            {sectionWorkouts.map((w,i)=>(
+              <ExerciseCard key={w.id} workout={w} index={workouts.indexOf(w)}
+                phase={phase} redDay={redDay} sessionId={isToday?sessionId:null}
+                existingResults={existingResults} onComplete={handleComplete}/>
+            ))}
+          </div>
+        );
+      })}
+
+      {isToday && workouts.length>0 && showComplete && (
+        <div className="complete-form">
+          <div className="complete-form-title">Complete Session</div>
+          <div className="complete-form-row">
+            <div className="cf-field">
+              <div className="cf-label">Duration (min)</div>
+              <input className="cf-input" type="number" inputMode="numeric" placeholder="e.g. 75"
+                value={completeForm.duration} onChange={e=>setCompleteForm(f=>({...f,duration:e.target.value}))}/>
+            </div>
+            <div className="cf-field">
+              <div className="cf-label">Overall RPE</div>
+              <input className="cf-input" type="number" inputMode="numeric" placeholder="1–10"
+                value={completeForm.rpe} onChange={e=>setCompleteForm(f=>({...f,rpe:e.target.value}))}/>
+            </div>
+          </div>
+          <div className="cf-field" style={{marginBottom:10}}>
+            <div className="cf-label">Session Notes</div>
+            <textarea className="cf-input note-input" rows={2} placeholder="How did it go?"
+              value={completeForm.notes} onChange={e=>setCompleteForm(f=>({...f,notes:e.target.value}))}/>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button className="btn btn-ghost" style={{flex:1,padding:"10px"}} onClick={()=>setShowComplete(false)}>Cancel</button>
+            <button className="btn btn-success" style={{flex:2,padding:"10px"}} onClick={handleFinish} disabled={finishing}>
+              {finishing?"Saving...":"✓ Save Session"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+
+    {isToday && workouts.length>0 && (
+      <div className="save-bar">
+        <button className="btn btn-ghost">Skip</button>
+        <button className={`btn ${allDone?"btn-success":"btn-primary"}`}
+          onClick={()=>setShowComplete(true)}>
+          {allDone?"✓ Finish Workout":"Save Progress"}
+        </button>
+      </div>
+    )}
+    {toast && <div className="toast">{toast}</div>}
+  </>);
+}
+
+// ─── HISTORY TAB ─────────────────────────────────────────────────────────────
+
+async function fetchHistoryByExercise() {
+  const results = await db(
+    `results?select=*,workouts(exercises(name,category,result_type)),sessions(logged_date,session_name)&order=logged_at.asc&limit=500`
+  ) || [];
+
+  // Group by exercise name
+  const byExercise = {};
+  for (const r of results) {
+    const name = r.workouts?.exercises?.name;
+    const category = r.workouts?.exercises?.category;
+    const resultType = r.workouts?.exercises?.result_type || "weighted_reps";
+    if (!name) continue;
+    if (!byExercise[name]) byExercise[name] = { name, category, resultType, sessions: {} };
+    const date = r.sessions?.logged_date || "?";
+    if (!byExercise[name].sessions[date]) byExercise[name].sessions[date] = [];
+    byExercise[name].sessions[date].push(r);
+  }
+
+  // Convert sessions to sorted array per exercise — most recent first
+  return Object.values(byExercise).map(ex => ({
+    ...ex,
+    sessions: Object.entries(ex.sessions)
+      .sort(([a],[b]) => b.localeCompare(a))
+      .map(([date, sets]) => ({
+        date,
+        sets: sets.sort((a,b) => a.set_number - b.set_number),
+      })),
+  })).sort((a,b) => a.name.localeCompare(b.name));
+}
+
+function formatSetSummary(set, resultType) {
+  const parts = [];
+  switch(resultType) {
+    case "weighted_reps":
+      if (set.reps_completed) parts.push(`${set.reps_completed} reps`);
+      if (set.weight_lbs) parts.push(`${set.weight_lbs} lb`);
+      break;
+    case "bodyweight_reps":
+      if (set.reps_completed) parts.push(`${set.reps_completed} reps`);
+      break;
+    case "timed_hold":
+      if (set.duration_seconds) parts.push(formatTime(set.duration_seconds));
+      break;
+    case "bilateral_timed":
+      if (set.duration_seconds) parts.push(`L ${formatTime(set.duration_seconds)}`);
+      if (set.weight_lbs) parts.push(`R ${formatTime(Math.round(set.weight_lbs))}`);
+      break;
+    case "distance_carry":
+      if (set.reps_completed) parts.push(`${set.reps_completed}m`);
+      if (set.weight_lbs) parts.push(`${set.weight_lbs} lb`);
+      break;
+    case "stair_climb":
+      if (set.reps_completed) parts.push(`${set.reps_completed} stories`);
+      if (set.duration_seconds) parts.push(secsToMMSS(set.duration_seconds));
+      break;
+    case "cardio_time":
+      if (set.duration_seconds) parts.push(secsToMMSS(set.duration_seconds));
+      break;
+    case "ruck":
+      if (set.duration_seconds) parts.push(secsToHMM(set.duration_seconds));
+      if (set.weight_lbs) parts.push(`${set.weight_lbs} lb pack`);
+      break;
+    case "mobility":
+      return "✓ Done";
+    default:
+      // Fallback — show whatever data exists
+      if (set.reps_completed) parts.push(`${set.reps_completed} reps`);
+      if (set.weight_lbs) parts.push(`${set.weight_lbs} lb`);
+      if (set.duration_seconds) parts.push(formatTime(set.duration_seconds));
+  }
+  if (set.rpe) parts.push(`RPE ${set.rpe}`);
+  return parts.join(" · ") || "Logged";
+}
+
+function getBestForSession(sets, resultType) {
+  if (!sets.length) return null;
+  if (resultType === "weighted_reps") {
+    const best = sets.reduce((a,b) => (b.weight_lbs||0) > (a.weight_lbs||0) ? b : a);
+    return best.weight_lbs ? `${best.weight_lbs} lb` : null;
+  }
+  if (resultType === "timed_hold") {
+    const best = sets.reduce((a,b) => (b.duration_seconds||0) > (a.duration_seconds||0) ? b : a);
+    return best.duration_seconds ? formatTime(best.duration_seconds) : null;
+  }
+  if (resultType === "stair_climb") {
+    const best = sets.reduce((a,b) => (b.reps_completed||0) > (a.reps_completed||0) ? b : a);
+    const parts = [];
+    if (best.reps_completed) parts.push(`${best.reps_completed} stories`);
+    if (best.duration_seconds) parts.push(secsToMMSS(best.duration_seconds));
+    return parts.join(" · ") || null;
+  }
+  if (resultType === "cardio_time") {
+    const best = sets.reduce((a,b) => (b.duration_seconds||0) > (a.duration_seconds||0) ? b : a);
+    return best.duration_seconds ? secsToMMSS(best.duration_seconds) : null;
+  }
+  if (resultType === "bodyweight_reps") {
+    const best = sets.reduce((a,b) => (b.reps_completed||0) > (a.reps_completed||0) ? b : a);
+    return best.reps_completed ? `${best.reps_completed} reps` : null;
+  }
+  return null;
+}
+
+function ExerciseHistoryCard({ exercise }) {
+  const [expanded, setExpanded] = useState(false);
+  const sessionCount = exercise.sessions.length;
+  const lastSession = exercise.sessions[0];
+  const lastDate = lastSession ? new Date(lastSession.date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}) : null;
+  const lastBest = lastSession ? getBestForSession(lastSession.sets, exercise.resultType) : null;
+
+  return (
+    <div className={`hist-card${expanded?" open":""}`}>
+      <div className="hist-card-header" onClick={()=>setExpanded(o=>!o)}>
+        <div className="hist-card-info">
+          <div className="hist-card-name">{exercise.name}</div>
+          <div className="hist-card-meta">
+            {sessionCount} session{sessionCount!==1?"s":""} logged
+            {lastDate && ` · Last: ${lastDate}`}
+            {lastBest && ` · ${lastBest}`}
+          </div>
+        </div>
+        <div className="hist-card-chevron">{expanded?"▲":"▼"}</div>
+      </div>
+
+      {expanded && (
+        <div className="hist-sessions">
+          <div className="hist-sessions-divider"/>
+          {exercise.sessions.map((session, si) => {
+            const date = new Date(session.date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+            const sessionBest = getBestForSession(session.sets, exercise.resultType);
+            return (
+              <div className="hist-session" key={si}>
+                <div className="hist-session-header">
+                  <div className="hist-session-date">{date}</div>
+                  {sessionBest && <div className="hist-session-best">{sessionBest}</div>}
+                </div>
+                <div className="hist-set-list">
+                  {session.sets.map((set, i) => (
+                    <div className="hist-set-row" key={i}>
+                      <div className="hist-set-num">Set {set.set_number}</div>
+                      <div className="hist-set-val">{formatSetSummary(set, exercise.resultType)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HistoryTab() {
+  const [loading, setLoading] = useState(true);
+  const [exercises, setExercises] = useState([]);
+  const [filter, setFilter] = useState("All");
+  const [search, setSearch] = useState("");
+
+  const cats = ["All","Strength","Carries & Loaded Movement","Stability & Balance","Cardio","Plyometric","Ruck","Mobility & Recovery"];
+
+  useEffect(()=>{
+    fetchHistoryByExercise()
+      .then(setExercises)
+      .catch(console.error)
+      .finally(()=>setLoading(false));
+  },[]);
+
+  const filtered = exercises
+    .filter(e => filter==="All" || e.category===filter)
+    .filter(e => !search || e.name.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div className="content">
+      <div className="filter-row" style={{marginBottom:8}}>
+        {cats.map(c=>(
+          <button key={c} className={`filter-pill${filter===c?" active":""}`} onClick={()=>setFilter(c)}>{c}</button>
+        ))}
+      </div>
+
+      <div style={{marginBottom:8}}>
+        <input
+          className="hist-search"
+          type="text"
+          placeholder="Search exercises..."
+          value={search}
+          onChange={e=>setSearch(e.target.value)}
+        />
+      </div>
+
+      {loading && <div className="center-msg"><div className="spinner"/><div className="center-sub">Loading history...</div></div>}
+
+      {!loading && filtered.length===0 && (
+        <div className="center-msg">
+          <div className="center-icon">📋</div>
+          <div className="center-title">No history yet</div>
+          <div className="center-sub">Log workouts to see your progression here.</div>
+        </div>
+      )}
+
+      {!loading && filtered.map(ex=>(
+        <ExerciseHistoryCard key={ex.name} exercise={ex}/>
+      ))}
+    </div>
+  );
+}
+
+// ─── PRs TAB ─────────────────────────────────────────────────────────────────
+
+function BestsTab() {
+  const [loading,setLoading] = useState(true);
+  const [bests,setBests] = useState([]);
+  const [filter,setFilter] = useState("All");
+  const cats = ["All","Strength","Carries & Loaded Movement","Stability & Balance","Cardio","Plyometric","Ruck","Mobility & Recovery"];
+
+  useEffect(()=>{ fetchBests().then(setBests).catch(console.error).finally(()=>setLoading(false)); },[]);
+
+  const filtered = filter==="All"?bests:bests.filter(p=>p.category===filter);
+
+  const fmtDate = (d) => d ? new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit"}) : null;
+
+  return (
+    <div className="content">
+      <div className="filter-row">
+        {cats.map(c=>(
+          <button key={c} className={`filter-pill${filter===c?" active":""}`} onClick={()=>setFilter(c)}>{c}</button>
+        ))}
+      </div>
+      {loading && <div className="center-msg"><div className="spinner"/><div className="center-sub">Loading bests...</div></div>}
+      {!loading && filtered.length===0 && (
+        <div className="center-msg"><div className="center-icon">🏆</div><div className="center-title">No bests yet</div><div className="center-sub">Log workouts to start tracking your best results.</div></div>
+      )}
+      {filtered.map(b=>(
+        <div className="pr-card" key={b.name}>
+          <div style={{flex:1,minWidth:0}}>
+            <div className="pr-name">{b.name}</div>
+            <div className="pr-cat">{b.category}</div>
+          </div>
+          <div className="pr-stats">
+            {b.maxWeight && <>
+              <div className="pr-stat">
+                <div className="pr-stat-val">{b.maxWeight}<span style={{fontSize:11,fontWeight:500,color:"var(--muted)"}}> lb</span></div>
+                {fmtDate(b.maxWeightDate) && <div className="pr-stat-label">{fmtDate(b.maxWeightDate)}</div>}
+              </div>
+              {(b.maxReps||b.maxTime) && <div className="pr-divider"/>}
+            </>}
+            {b.maxReps && <>
+              <div className="pr-stat">
+                <div className="pr-stat-val">{b.maxReps}<span style={{fontSize:11,fontWeight:500,color:"var(--muted)"}}> reps</span></div>
+                {fmtDate(b.maxRepsDate) && <div className="pr-stat-label">{fmtDate(b.maxRepsDate)}</div>}
+              </div>
+              {b.maxTime && <div className="pr-divider"/>}
+            </>}
+            {b.maxTime && (
+              <div className="pr-stat">
+                <div className="pr-stat-val">{formatTime(b.maxTime)}</div>
+                {fmtDate(b.maxTimeDate) && <div className="pr-stat-label">{fmtDate(b.maxTimeDate)}</div>}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── RACES TAB ───────────────────────────────────────────────────────────────
+
+function RacesTab({ races }) {
+  const upcoming = races.filter(r=>!r.dns && !r.dnf && daysUntil(r.race_date)>0)
+    .sort((a,b)=>new Date(a.race_date)-new Date(b.race_date));
+  const past = races.filter(r=>r.dns||r.dnf||daysUntil(r.race_date)<=0)
+    .sort((a,b)=>new Date(b.race_date)-new Date(a.race_date));
+
+  const typeClass = t=>t==="anchor"?"race-type-anchor":t==="target"?"race-type-target":"race-type-training";
+  const typeLabel = t=>t==="anchor"?"A Race":t==="target"?"B Race":"Training";
+
+  return (
+    <div className="content">
+      {upcoming.length>0 && <>
+        <div className="section-title">Upcoming</div>
+        {upcoming.map(r=>{
+          const days = daysUntil(r.race_date);
+          return (
+            <div className="race-card" key={r.id}>
+              <div>
+                <div className="race-name">{r.name}</div>
+                <div className="race-meta">
+                  {new Date(r.race_date+"T12:00:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}
+                  {r.distance_miles ? ` · ${r.distance_miles} mi` : ""}
+                </div>
+                <div className={`race-type-pill ${typeClass(r.race_type)}`}>{typeLabel(r.race_type)}</div>
+              </div>
+              <div className="race-countdown">
+                <div className="race-days">{days}</div>
+                <div className="race-days-label">days out</div>
+              </div>
+            </div>
+          );
+        })}
+      </>}
+      {past.length>0 && <>
+        <div className="section-title" style={{marginTop:8}}>Past</div>
+        {past.map(r=>(
+          <div className="race-card" key={r.id} style={{opacity:.6}}>
+            <div>
+              <div className="race-name">{r.name}</div>
+              <div className="race-meta">
+                {new Date(r.race_date+"T12:00:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}
+                {r.distance_miles?` · ${r.distance_miles} mi`:""}
+              </div>
+              {r.result_time_seconds && <div className="race-meta" style={{marginTop:2,fontWeight:600}}>
+                {secsToHMM(r.result_time_seconds)}
+              </div>}
+            </div>
+            <div className={`race-type-pill ${typeClass(r.race_type)}`}>{typeLabel(r.race_type)}</div>
+          </div>
+        ))}
+      </>}
+    </div>
+  );
+}
+
+// ─── HRV TAB ─────────────────────────────────────────────────────────────────
+
+function HRVTab({ appState, onHrvSaved }) {
+  const { settings } = appState;
+  const today = toDateStr(new Date());
+  const [form,setForm] = useState({hrv:"",hr:"",sleep:"",energy:"",notes:""});
+  const [saving,setSaving] = useState(false);
+  const [toast,setToast] = useState(null);
+  const [history,setHistory] = useState([]);
+  const [loadingHistory,setLoadingHistory] = useState(true);
+  const [result,setResult] = useState(null);
+
+  const setF = (k,v)=>setForm(f=>({...f,[k]:v}));
+
+  useEffect(()=>{
+    db(`hrv?select=*&order=date.desc&limit=14`)
+      .then(r=>setHistory(r||[]))
+      .catch(console.error)
+      .finally(()=>setLoadingHistory(false));
+  },[]);
+
+  const handleSave = async () => {
+    if (!form.hrv) return;
+    setSaving(true);
+    try {
+      const res = await logHrv(today, form.hrv, form.hr, form.sleep, form.energy, form.notes, settings.hrv_red_day_threshold_pct);
+      setResult(res);
+      setToast(res.redDay?"🔴 Red day flagged":"✅ HRV logged — Green day");
+      setTimeout(()=>setToast(null),2500);
+      onHrvSaved();
+      const h = await db(`hrv?select=*&order=date.desc&limit=14`);
+      setHistory(h||[]);
+    } catch(e){ console.error(e); }
+    setSaving(false);
+  };
+
+  const avg7 = ()=>{
+    const vals = history.slice(0,7).map(r=>r.morning_hrv).filter(Boolean);
+    return vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length) : null;
+  };
+
+  return (
+    <div className="content">
+      <div className="hrv-card">
+        <div style={{fontSize:14,fontWeight:700,color:"var(--text)",marginBottom:10}}>Log Today's HRV</div>
+        {result && (
+          <div style={{padding:"8px 10px",borderRadius:8,marginBottom:10,background:result.redDay?"var(--red-bg)":"var(--green-bg)",color:result.redDay?"var(--red)":"var(--green)",fontSize:12,fontWeight:600}}>
+            {result.redDay?`🔴 Red day — HRV ${form.hrv} is more than ${settings.hrv_red_day_threshold_pct}% below 7-day avg of ${result.avg7}`:`✓ Green day — HRV ${form.hrv} vs 7-day avg ${result.avg7}`}
+          </div>
+        )}
+        <div className="hrv-form-row">
+          <div className="hrv-field">
+            <div className="hrv-label">Morning HRV</div>
+            <input className="hrv-input" type="number" inputMode="numeric" placeholder="e.g. 62"
+              value={form.hrv} onChange={e=>setF("hrv",e.target.value)}/>
+          </div>
+          <div className="hrv-field">
+            <div className="hrv-label">Resting HR</div>
+            <input className="hrv-input" type="number" inputMode="numeric" placeholder="e.g. 48"
+              value={form.hr} onChange={e=>setF("hr",e.target.value)}/>
+          </div>
+        </div>
+        <div className="hrv-form-row">
+          <div className="hrv-field">
+            <div className="hrv-label">Sleep (hrs)</div>
+            <input className="hrv-input" type="number" inputMode="decimal" placeholder="e.g. 7.5"
+              value={form.sleep} onChange={e=>setF("sleep",e.target.value)}/>
+          </div>
+          <div className="hrv-field">
+            <div className="hrv-label">Energy (1–5)</div>
+            <input className="hrv-input" type="number" inputMode="numeric" placeholder="e.g. 3"
+              value={form.energy} onChange={e=>setF("energy",e.target.value)}/>
+          </div>
+        </div>
+        <div className="hrv-field" style={{marginBottom:10}}>
+          <div className="hrv-label">Notes</div>
+          <textarea className="hrv-input note-input" rows={2} style={{resize:"none"}}
+            placeholder="Sleep quality, stress, travel, alcohol..."
+            value={form.notes} onChange={e=>setF("notes",e.target.value)}/>
+        </div>
+        <button className="btn btn-primary" style={{width:"100%",padding:"12px"}} onClick={handleSave} disabled={saving||!form.hrv}>
+          {saving?"Saving...":"Log HRV"}
+        </button>
+      </div>
+
+      {avg7() && (
+        <div style={{background:"var(--surface)",border:"1px solid var(--border)",borderRadius:12,padding:"12px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{fontSize:13,color:"var(--text2)"}}>7-day average</div>
+          <div style={{fontSize:20,fontWeight:800,color:"var(--text)"}}>{avg7()}</div>
+        </div>
+      )}
+
+      {!loadingHistory && history.length>0 && (
+        <div className="hrv-card">
+          <div style={{fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"var(--muted)",marginBottom:8}}>Recent</div>
+          {history.map(r=>(
+            <div className="hrv-history-row" key={r.id}>
+              <span className="hrv-history-date">
+                {new Date(r.date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}
+              </span>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span className="hrv-history-val">{r.morning_hrv}</span>
+                {r.resting_hr && <span style={{fontSize:11,color:"var(--muted)"}}>{r.resting_hr} bpm</span>}
+                {r.sleep_hours && <span style={{fontSize:11,color:"var(--muted)"}}>{r.sleep_hours}h sleep</span>}
+                <span className={r.red_day?"hrv-red-chip":"hrv-green-chip"}>{r.red_day?"RED":"OK"}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+// ─── BENCHMARKS TAB ──────────────────────────────────────────────────────────
+
+function BenchmarkCard({ bm, results, onSaved }) {
+  const [open,setOpen] = useState(false);
+  const [logging,setLogging] = useState(false);
+  const [saving,setSaving] = useState(false);
+  const [toast,setToast] = useState(null);
+  const latest = results[0]||null;
+
+  const emptyForm = ()=>({
+    tested_date:toDateStr(new Date()), phase:"Phase 1", notes:"",
+    b1_time_seconds:"", b1_load:"Bodyweight",
+    b2_reps:"", b2_load_lbs:"",
+    b3_mins:"", b3_secs:"", b3_nasal_transition:"",
+    b4_left_seconds:"", b4_right_seconds:"", b4_load:"Bodyweight",
+    b5_hrs:"", b5_mins:"", b5_ruck_weight_lbs:"30", b5_rounds:"5", b5_footwear:"",
+    b6_hrs:"", b6_mins:"", b6_ruck_weight_lbs:"30", b6_temp_conditions:"", b6_gi_notes:"",
+  });
+  const [form,setForm] = useState(emptyForm);
+  const set = (k,v)=>setForm(f=>({...f,[k]:v}));
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const payload = { benchmark_number:bm.num, tested_date:form.tested_date, phase:form.phase, notes:form.notes||null };
+      if (bm.num===1) { payload.b1_time_seconds=form.b1_time_seconds?parseInt(form.b1_time_seconds):null; payload.b1_load=form.b1_load||null; }
+      if (bm.num===2) { payload.b2_reps=form.b2_reps?parseInt(form.b2_reps):null; payload.b2_load_lbs=form.b2_load_lbs?parseFloat(form.b2_load_lbs):null; }
+      if (bm.num===3) { payload.b3_time_seconds=(parseInt(form.b3_mins||0)*60)+parseInt(form.b3_secs||0)||null; payload.b3_nasal_transition=form.b3_nasal_transition||null; }
+      if (bm.num===4) {
+        const l=parseInt(form.b4_left_seconds)||null, r=parseInt(form.b4_right_seconds)||null;
+        payload.b4_left_seconds=l; payload.b4_right_seconds=r;
+        if (l&&r) payload.b4_asymmetry_pct=parseFloat(((Math.abs(l-r)/Math.max(l,r))*100).toFixed(1));
+        payload.b4_load=form.b4_load||null;
+      }
+      if (bm.num===5) { payload.b5_time_seconds=(parseInt(form.b5_hrs||0)*3600)+(parseInt(form.b5_mins||0)*60)||null; payload.b5_ruck_weight_lbs=parseInt(form.b5_ruck_weight_lbs)||null; payload.b5_rounds=parseInt(form.b5_rounds)||null; payload.b5_footwear=form.b5_footwear||null; }
+      if (bm.num===6) { payload.b6_time_seconds=(parseInt(form.b6_hrs||0)*3600)+(parseInt(form.b6_mins||0)*60)||null; payload.b6_ruck_weight_lbs=parseInt(form.b6_ruck_weight_lbs)||null; payload.b6_temp_conditions=form.b6_temp_conditions||null; payload.b6_gi_notes=form.b6_gi_notes||null; }
+      await saveBenchmarkResult(payload);
+      setToast("Saved! 🎯"); setTimeout(()=>setToast(null),2000);
+      setLogging(false); setForm(emptyForm()); onSaved();
+    } catch(e){ console.error(e); }
+    setSaving(false);
+  };
+
+  const renderLatest = () => {
+    if (!latest) return <div className="bm-no-result">No results yet — tap to log</div>;
+    const date = new Date(latest.tested_date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+    if (bm.num===1) return <div className="bm-result-row"><span className="bm-result-val">{formatTime(latest.b1_time_seconds)}</span><span className="bm-result-meta">{latest.b1_load} · {date}</span></div>;
+    if (bm.num===2) return <div className="bm-result-row"><span className="bm-result-val">{latest.b2_reps} reps</span><span className="bm-result-meta">{latest.b2_load_lbs} lb · {date}</span></div>;
+    if (bm.num===3) return <div className="bm-result-row"><span className="bm-result-val">{secsToMMSS(latest.b3_time_seconds)}</span><span className="bm-result-meta">2000m · {date}</span></div>;
+    if (bm.num===4) return <div className="bm-result-row"><span className="bm-result-val">L {formatTime(latest.b4_left_seconds)} · R {formatTime(latest.b4_right_seconds)}</span><span className="bm-result-meta">{latest.b4_asymmetry_pct}% asym · {date}</span></div>;
+    if (bm.num===5) return <div className="bm-result-row"><span className="bm-result-val">{secsToMMSS(latest.b5_time_seconds)}</span><span className="bm-result-meta">{latest.b5_ruck_weight_lbs} lb · {latest.b5_rounds} rounds · {date}</span></div>;
+    if (bm.num===6) return <div className="bm-result-row"><span className="bm-result-val">{secsToHMM(latest.b6_time_seconds)}</span><span className="bm-result-meta">{latest.b6_ruck_weight_lbs} lb · {date}</span></div>;
+  };
+
+  const inp = (label,key,opts={})=>(
+    <div className="bm-field">
+      <div className="bm-field-label">{label}</div>
+      <input className="bm-field-input" type={opts.type||"number"} inputMode={opts.inputMode||"numeric"}
+        placeholder={opts.placeholder||"—"} value={form[key]} onChange={e=>set(key,e.target.value)}/>
+    </div>
+  );
+
+  const timeField = (label,hKey,mKey)=>(
+    <div className="bm-field">
+      <div className="bm-field-label">{label}</div>
+      <div style={{display:"flex",gap:6}}>
+        <input className="bm-field-input" type="number" inputMode="numeric" placeholder="h" value={form[hKey]} onChange={e=>set(hKey,e.target.value)} style={{flex:1}}/>
+        <input className="bm-field-input" type="number" inputMode="numeric" placeholder="min" value={form[mKey]} onChange={e=>set(mKey,e.target.value)} style={{flex:1}}/>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="bm-card" style={{borderLeftColor:bm.color}}>
+      {toast && <div className="toast" style={{bottom:160}}>{toast}</div>}
+      <div className="bm-card-header" onClick={()=>!logging&&setOpen(o=>!o)}>
+        <div className="bm-num" style={{color:bm.color}}>B{bm.num}</div>
+        <div className="bm-info">
+          <div className="bm-title">{bm.title}</div>
+          <div className="bm-subtitle">{bm.subtitle}</div>
+          <div className="bm-day-badge">{bm.day}</div>
+        </div>
+        {!logging && (
+          <button className="bm-log-btn" onClick={e=>{e.stopPropagation();setLogging(true);setOpen(true);}}>+ Log</button>
+        )}
+      </div>
+      {open && (
+        <div className="bm-body">
+          <div className="bm-divider"/>
+          <div className="bm-metric-label">Metric: {bm.metric}</div>
+          {renderLatest()}
+          {logging ? (
+            <div className="bm-form">
+              <div className="bm-form-row">
+                <div className="bm-field">
+                  <div className="bm-field-label">Date</div>
+                  <input className="bm-field-input" type="date" value={form.tested_date} onChange={e=>set("tested_date",e.target.value)}/>
+                </div>
+                <div className="bm-field">
+                  <div className="bm-field-label">Phase</div>
+                  <select className="bm-field-input" value={form.phase} onChange={e=>set("phase",e.target.value)}>
+                    {["Phase 1","Phase 2 Bridge","Phase 2 - Build","Phase 3 - Peak","Pre-Race Taper"].map(p=><option key={p}>{p}</option>)}
+                  </select>
+                </div>
+              </div>
+              {bm.num===1 && <div className="bm-form-row">{inp("Hold time (seconds)","b1_time_seconds")}{inp("Load","b1_load",{type:"text",inputMode:"text",placeholder:"Bodyweight"})}</div>}
+              {bm.num===2 && <div className="bm-form-row">{inp("Total reps","b2_reps")}{inp("Load (lbs/hand)","b2_load_lbs",{inputMode:"decimal"})}</div>}
+              {bm.num===3 && <>
+                <div className="bm-form-row">
+                  <div className="bm-field">
+                    <div className="bm-field-label">Time (mm:ss)</div>
+                    <div style={{display:"flex",gap:6}}>
+                      <input className="bm-field-input" type="number" inputMode="numeric" placeholder="min" value={form.b3_mins} onChange={e=>set("b3_mins",e.target.value)} style={{flex:1}}/>
+                      <input className="bm-field-input" type="number" inputMode="numeric" placeholder="sec" value={form.b3_secs} onChange={e=>set("b3_secs",e.target.value)} style={{flex:1}}/>
+                    </div>
+                  </div>
+                  {inp("Nasal transition","b3_nasal_transition",{type:"text",inputMode:"text",placeholder:"e.g. 500m"})}
+                </div>
+              </>}
+              {bm.num===4 && <>
+                <div className="bm-form-row">{inp("Left leg (sec)","b4_left_seconds")}{inp("Right leg (sec)","b4_right_seconds")}</div>
+                {form.b4_left_seconds && form.b4_right_seconds && (
+                  <div className="bm-asym-preview">
+                    Asymmetry: {((Math.abs(parseInt(form.b4_left_seconds)-parseInt(form.b4_right_seconds))/Math.max(parseInt(form.b4_left_seconds),parseInt(form.b4_right_seconds)))*100).toFixed(1)}%
+                  </div>
+                )}
+              </>}
+              {bm.num===5 && <>
+                <div className="bm-form-row">{timeField("Total time (h/min)","b5_hrs","b5_mins")}{inp("Ruck weight (lbs)","b5_ruck_weight_lbs")}</div>
+                <div className="bm-form-row">{inp("Rounds","b5_rounds")}{inp("Footwear","b5_footwear",{type:"text",inputMode:"text",placeholder:"e.g. Topo"})}</div>
+              </>}
+              {bm.num===6 && <>
+                <div className="bm-form-row">{timeField("Total time (h/min)","b6_hrs","b6_mins")}{inp("Ruck weight (lbs)","b6_ruck_weight_lbs")}</div>
+                <div className="bm-form-row">{inp("Temp/conditions","b6_temp_conditions",{type:"text",inputMode:"text",placeholder:"e.g. 95°F humid"})}{inp("GI notes","b6_gi_notes",{type:"text",inputMode:"text",placeholder:"Any issues?"})}</div>
+              </>}
+              <div className="bm-field" style={{marginTop:2}}>
+                <div className="bm-field-label">Notes</div>
+                <textarea className="bm-field-input" rows={2} placeholder="Optional..." value={form.notes} onChange={e=>set("notes",e.target.value)} style={{resize:"none",lineHeight:1.5}}/>
+              </div>
+              <div style={{display:"flex",gap:8,marginTop:8}}>
+                <button className="btn btn-ghost" style={{flex:1,padding:"10px"}} onClick={()=>setLogging(false)}>Cancel</button>
+                <button className="btn btn-primary" style={{flex:2,padding:"10px"}} onClick={handleSave} disabled={saving}>{saving?"Saving...":"Save Result"}</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {results.length>1 && (
+                <div style={{marginBottom:10}}>
+                  <div className="bm-history-label">History</div>
+                  {results.slice(1).map((r,i)=>{
+                    const date = new Date(r.tested_date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit"});
+                    let val="—";
+                    if (bm.num===1) val=formatTime(r.b1_time_seconds);
+                    if (bm.num===2) val=`${r.b2_reps} reps @ ${r.b2_load_lbs} lb`;
+                    if (bm.num===3) val=secsToMMSS(r.b3_time_seconds);
+                    if (bm.num===4) val=`L ${formatTime(r.b4_left_seconds)} · R ${formatTime(r.b4_right_seconds)} (${r.b4_asymmetry_pct}%)`;
+                    if (bm.num===5) val=secsToMMSS(r.b5_time_seconds);
+                    if (bm.num===6) val=secsToHMM(r.b6_time_seconds);
+                    return <div className="bm-history-row" key={i}><span className="bm-history-date">{date}</span><span className="bm-history-val">{val}</span></div>;
+                  })}
+                </div>
+              )}
+              <div className="bm-targets-label">Phase targets</div>
+              {bm.targets.map((t,i)=>(
+                <div className="bm-target-row" key={i}>
+                  <span className="bm-target-phase">Phase {i+1<=3?i+1:"Race"}</span>
+                  <span className="bm-target-val">{t}</span>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BenchmarksTab() {
+  const [loading,setLoading] = useState(true);
+  const [results,setResults] = useState([]);
+
+  const load = ()=>{ setLoading(true); fetchBenchmarkResults().then(setResults).catch(console.error).finally(()=>setLoading(false)); };
+  useEffect(()=>{ load(); },[]);
+
+  return (
+    <div className="content">
+      {loading && <div className="center-msg"><div className="spinner"/><div className="center-sub">Loading benchmarks...</div></div>}
+      {!loading && BENCHMARKS.map(bm=>(
+        <BenchmarkCard key={bm.num} bm={bm}
+          results={results.filter(r=>r.benchmark_number===bm.num)}
+          onSaved={load}/>
+      ))}
+    </div>
+  );
+}
+
+// ─── ROOT ─────────────────────────────────────────────────────────────────────
+
+function App() {
+  const today = new Date();
+  const todayStr = toDateStr(today);
+
+  const [tab,setTab] = useState("today");
+  const [selectedDate,setSelectedDate] = useState(today);
+  const [weekOffset,setWeekOffset] = useState(0);
+  const [appState,setAppState] = useState({settings:{current_phase:"Phase 1",hrv_red_day_threshold_pct:8},hrv:null,races:[]});
+  const [appLoading,setAppLoading] = useState(true);
+
+  const loadAppState = ()=>{
+    fetchAppState().then(s=>setAppState(s)).catch(console.error).finally(()=>setAppLoading(false));
+  };
+
+  useEffect(()=>{ loadAppState(); },[]);
+
+  const anchorDate = new Date(today);
+  anchorDate.setDate(today.getDate()+weekOffset*7);
+  const weekDates = getWeekDates(anchorDate);
+
+  const weekLabel = weekOffset===0?"This Week":weekOffset===-1?"Last Week":weekOffset===1?"Next Week":
+    weekDates[0].toLocaleDateString("en-US",{month:"short",day:"numeric"});
+
+  const TABS = [
+    {id:"today",icon:"🏋️",label:"Today"},
+    {id:"history",icon:"📋",label:"History"},
+    {id:"bests",icon:"🏆",label:"Bests"},
+    {id:"races",icon:"🏁",label:"Races"},
+    {id:"benchmarks",icon:"🎯",label:"Benchmarks"},
+  ];
+
+  if (appLoading) return (
+    <>
+      <style>{css}</style>
+      <div className="app"><div className="center-msg" style={{marginTop:80}}><div className="spinner"/><div className="center-sub">Loading...</div></div></div>
+    </>
+  );
+
+  return (
+    <>
+      <style>{css}</style>
+      <div className="app">
+        <div className="week-strip">
+          <div className="week-strip-top">
+            <div className="week-label">{weekLabel}</div>
+            <div className="week-nav">
+              <button className="week-nav-btn" onClick={()=>setWeekOffset(o=>o-1)}>‹</button>
+              <button className="week-nav-btn" onClick={()=>setWeekOffset(o=>o+1)}>›</button>
+            </div>
+          </div>
+          <div className="days-row">
+            {weekDates.map((date,i)=>{
+              const dStr = toDateStr(date);
+              const isToday = dStr===todayStr;
+              const isSelected = dStr===toDateStr(selectedDate);
+              return (
+                <button key={i} className={`day-btn${isToday?" today":""}${isSelected?" selected":""}`}
+                  onClick={()=>{setSelectedDate(date);setTab("today");}}>
+                  <div className="day-name">{DAY_SHORT[date.getDay()]}</div>
+                  <div className="day-num">{date.getDate()}</div>
+                  <div className="day-dot" style={{opacity:isSelected?1:0}}/>
+                  {isSelected && <div className="day-active-bar"/>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {tab==="today" && <TodayTab selectedDate={selectedDate} todayDate={todayStr} appState={{...appState, onHrvSaved:loadAppState}}/>}
+        {tab==="history" && <HistoryTab/>}
+        {tab==="bests" && <BestsTab/>}
+        {tab==="races" && <RacesTab races={appState.races}/>}
+        {tab==="benchmarks" && <BenchmarksTab/>}
+
+        <div className="bottom-nav">
+          {TABS.map(({id,icon,label})=>(
+            <button key={id} className={`nav-item${tab===id?" active":""}`} onClick={()=>setTab(id)}>
+              <span className="nav-icon">{icon}</span>
+              <span className="nav-label">{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+  </script>
+</body>
+</html>
