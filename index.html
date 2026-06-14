@@ -1,1 +1,1343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Train" />
+  <title>Cocodona Training</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>* { box-sizing: border-box; margin: 0; padding: 0; } html, body, #root { height: 100%; } body { background: #f2f2f5; }</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+const { useState, useEffect, useRef } = React;
 
+const SUPABASE_URL = "https://mejzbduhwhghxprdujzl.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1lanpiZHVod2hnaHhwcmR1anpsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzA0MTEsImV4cCI6MjA5NTg0NjQxMX0.WGvSETlba4bN839SBatg5MTRBANuSt7DAmycdn95BM8";
+
+const db = async (path, options = {}) => {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: options.prefer || "return=representation",
+      ...options.headers,
+    },
+    ...options,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+};
+
+const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const DAY_SHORT  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+function toDateStr(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth()+1).padStart(2,"0");
+  const d = String(date.getDate()).padStart(2,"0");
+  return `${y}-${m}-${d}`;
+}
+
+function getWeekDates(anchor) {
+  const d = new Date(anchor);
+  const mon = new Date(d);
+  mon.setDate(d.getDate() - ((d.getDay()+6)%7));
+  return Array.from({length:7},(_,i)=>{
+    const dd = new Date(mon);
+    dd.setDate(mon.getDate()+i);
+    return dd;
+  });
+}
+
+function daysUntil(dateStr) {
+  const target = new Date(dateStr+"T12:00:00");
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  return Math.ceil((target-today)/(1000*60*60*24));
+}
+
+// ─── SUPABASE ────────────────────────────────────────────────────────────────
+
+async function fetchWorkoutsForDay(dayName) {
+  return await db(
+    `workouts?day_of_week=eq.${dayName}&select=*,exercises(name,result_type)&order=order_in_session.asc`
+  ) || [];
+}
+
+async function fetchLastEntry(exerciseName, beforeDate) {
+  // Find most recent free-text log for this exercise before the given date
+  const results = await db(
+    `free_logs?exercise_name=eq.${encodeURIComponent(exerciseName)}&log_date=lt.${beforeDate}&select=*&order=log_date.desc&limit=1`
+  );
+  return results?.[0] || null;
+}
+
+async function fetchTodayEntry(exerciseName, date) {
+  const results = await db(
+    `free_logs?exercise_name=eq.${encodeURIComponent(exerciseName)}&log_date=eq.${date}&select=*&limit=1`
+  );
+  return results?.[0] || null;
+}
+
+async function saveEntry(exerciseName, date, text, existingId) {
+  if (!text.trim()) return;
+  if (existingId) {
+    await db(`free_logs?id=eq.${existingId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ log_text: text }),
+      prefer: "return=minimal",
+    });
+  } else {
+    await db(`free_logs`, {
+      method: "POST",
+      body: JSON.stringify({
+        exercise_name: exerciseName,
+        log_date: date,
+        log_text: text,
+      }),
+    });
+  }
+}
+
+async function fetchRaces() {
+  return await db(`races?order=race_date.asc&select=*`) || [];
+}
+
+async function fetchRecentLogs(limit = 200) {
+  return await db(
+    `free_logs?select=*&order=log_date.desc&limit=${limit}`
+  ) || [];
+}
+
+// ─── CSS ─────────────────────────────────────────────────────────────────────
+
+const css = `
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  :root {
+    --bg: #f2f2f5;
+    --surface: #ffffff;
+    --surface2: #f7f7f9;
+    --border: #e4e4e8;
+    --text: #111114;
+    --text2: #44444f;
+    --muted: #8888a0;
+    --green: #1a9e5c;
+    --green-bg: #edf7f2;
+    --green-border: #b8e8d0;
+    --accent: #111114;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app {
+    max-width: 430px;
+    margin: 0 auto;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+  }
+
+  /* ── WEEK STRIP ── */
+  .week-strip {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px 0;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .week-strip-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .week-label {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .week-nav { display: flex; gap: 6px; }
+
+  .week-nav-btn {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text2);
+    font-size: 15px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .days-row { display: flex; gap: 3px; }
+
+  .day-btn {
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 6px 2px 10px;
+    border-radius: 10px 10px 0 0;
+    cursor: pointer; border: none; background: none;
+    position: relative;
+  }
+
+  .day-name {
+    font-size: 11px; font-weight: 600;
+    letter-spacing: .5px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px;
+  }
+
+  .day-num {
+    font-size: 17px; font-weight: 600; color: var(--text2);
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+  }
+
+  .day-btn.today .day-num { background: var(--text); color: #fff; }
+  .day-btn.selected:not(.today) .day-num {
+    background: var(--surface2); color: var(--text);
+    border: 1.5px solid var(--border);
+  }
+  .day-btn.selected .day-name { color: var(--text2); }
+  .day-active-bar {
+    position: absolute; bottom: 0; left: 4px; right: 4px;
+    height: 2px; background: var(--text); border-radius: 1px;
+  }
+
+  /* ── SESSION HEADER ── */
+  .session-header {
+    padding: 14px 16px 10px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .session-day-label {
+    font-size: 12px; font-weight: 700;
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px;
+  }
+
+  .session-name {
+    font-size: 26px; font-weight: 800;
+    letter-spacing: -.3px; color: var(--text);
+    line-height: 1.1;
+  }
+
+  .session-count {
+    font-size: 15px; color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* ── CONTENT ── */
+  .content {
+    flex: 1;
+    padding: 10px 12px 120px;
+    display: flex; flex-direction: column; gap: 6px;
+    overflow-y: auto;
+  }
+
+  /* ── SECTION LABEL ── */
+  .section-label {
+    font-size: 12px; font-weight: 700;
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted);
+    padding: 8px 4px 2px;
+  }
+
+  /* ── EXERCISE ROW ── */
+  .ex-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: border-color .2s;
+  }
+
+  .ex-row-open { border-color: var(--text); }
+  .ex-row-saved { border-color: var(--green-border); }
+
+  .ex-row-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 14px;
+    cursor: pointer; user-select: none;
+  }
+
+  .ex-row-header-left { flex: 1; min-width: 0; }
+  .ex-row-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+  .ex-row-check {
+    font-size: 16px; font-weight: 700; color: var(--green);
+  }
+
+  .ex-row-chevron {
+    font-size: 22px; font-weight: 300; color: var(--muted);
+    line-height: 1; width: 24px; text-align: center;
+  }
+
+  .ex-row-body {
+    padding: 0 14px 14px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+
+  .ex-row-name {
+    font-size: 20px; font-weight: 700;
+    color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .ex-row-rx {
+    font-size: 14px; color: var(--muted);
+    margin-top: 2px; font-weight: 400;
+  }
+
+  .ex-last-time {
+    font-size: 14px; color: var(--muted);
+    margin-bottom: 8px; line-height: 1.5;
+  }
+
+  .ex-last-label {
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 3px;
+  }
+
+  .ex-last-text {
+    font-size: 15px; color: var(--text);
+    font-weight: 500; line-height: 1.5;
+  }
+
+  .ex-this-label {
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase;
+    color: var(--text); margin-bottom: 6px;
+  }
+
+  .ex-textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1.5px solid var(--border);
+    border-radius: 9px;
+    padding: 12px 14px;
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    outline: none;
+    resize: none;
+    line-height: 1.5;
+    min-height: 62px;
+    transition: border-color .15s;
+  }
+
+  .ex-textarea:focus { border-color: var(--text); background: var(--surface); }
+  .ex-textarea::placeholder { color: var(--border); }
+
+  .ex-textarea.saved {
+    border-color: var(--green-border);
+    background: var(--green-bg);
+  }
+
+  /* ── ADD EXERCISE ── */
+  .add-ex-btn {
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1.5px dashed var(--border);
+    background: none;
+    font-family: 'Outfit', sans-serif;
+    font-size: 16px; font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all .15s;
+    width: 100%;
+    margin-top: 4px;
+  }
+
+  .add-ex-btn:active { background: var(--surface); color: var(--text); }
+
+  .add-ex-form {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+
+  .add-ex-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1.5px solid var(--border);
+    border-radius: 9px;
+    padding: 12px 14px;
+    font-size: 18px; font-weight: 500;
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    outline: none;
+  }
+
+  .add-ex-input:focus { border-color: var(--text); }
+  .add-ex-input::placeholder { color: var(--muted); }
+
+  .add-ex-actions {
+    display: flex; gap: 8px;
+  }
+
+  /* ── HISTORY TAB ── */
+  .hist-date-group { margin-bottom: 12px; }
+
+  .hist-date-label {
+    font-size: 13px; font-weight: 700;
+    letter-spacing: .5px; text-transform: uppercase;
+    color: var(--muted); padding: 6px 2px 5px;
+  }
+
+  .hist-entry {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 13px 14px;
+    margin-bottom: 6px;
+  }
+
+  .hist-entry-name {
+    font-size: 17px; font-weight: 700;
+    color: var(--text); margin-bottom: 5px;
+  }
+
+  .hist-entry-text {
+    font-size: 16px; font-weight: 400;
+    color: var(--text2); line-height: 1.5;
+  }
+
+  /* ── RACES TAB ── */
+  .race-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 8px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .race-name { font-size: 18px; font-weight: 700; color: var(--text); }
+  .race-meta { font-size: 14px; color: var(--muted); margin-top: 3px; }
+
+  .race-type-pill {
+    display: inline-block;
+    padding: 3px 10px; border-radius: 10px;
+    font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .5px;
+    margin-top: 5px;
+  }
+
+  .pill-anchor { background: #fdf0ef; color: #d93025; }
+  .pill-target { background: #eef4fd; color: #1a6fe8; }
+  .pill-training { background: #f0f0f2; color: #555560; }
+
+  .race-countdown { text-align: right; flex-shrink: 0; }
+  .race-days { font-size: 38px; font-weight: 800; color: var(--text); line-height: 1; }
+  .race-days-label { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+
+  /* ── BOTTOM NAV ── */
+  .bottom-nav {
+    position: fixed; bottom: 0;
+    left: 50%; transform: translateX(-50%);
+    width: 430px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex; padding: 8px 4px 22px; gap: 4px;
+  }
+
+  .nav-item {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; gap: 4px;
+    cursor: pointer; border: none; background: none;
+    padding: 6px 4px; border-radius: 12px;
+    transition: background .15s;
+  }
+
+  .nav-item.active {
+    background: var(--green-bg);
+    outline: 2px solid var(--green);
+    outline-offset: -2px;
+  }
+
+  .nav-icon { font-size: 24px; line-height: 1; }
+  .nav-label { font-size: 11px; font-weight: 700; color: var(--muted); }
+  .nav-item.active .nav-label { color: var(--green); }
+
+  /* ── BUTTONS ── */
+  .btn {
+    padding: 13px 16px; border-radius: 11px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 16px; font-weight: 700;
+    cursor: pointer; border: none;
+    transition: all .15s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--text); color: #fff; flex: 2; }
+  .btn-ghost { background: var(--surface2); color: var(--text2); border: 1.5px solid var(--border); flex: 1; }
+
+  /* ── EMPTY / LOADING ── */
+  .center-msg {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 60px 20px; gap: 12px; text-align: center;
+  }
+  .center-icon { font-size: 44px; opacity: .3; }
+  .center-title { font-size: 22px; font-weight: 700; color: var(--text); }
+  .center-sub { font-size: 16px; color: var(--muted); line-height: 1.6; }
+  .spinner {
+    width: 32px; height: 32px;
+    border: 2px solid var(--border);
+    border-top-color: var(--text);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── ADMIN ── */
+  .admin-day-pills {
+    display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px;
+  }
+
+  .admin-day-pill {
+    padding: 7px 14px; border-radius: 20px;
+    font-size: 14px; font-weight: 700;
+    border: 1.5px solid var(--border);
+    background: var(--surface); color: var(--text2);
+    cursor: pointer; transition: all .15s;
+  }
+
+  .admin-day-pill.active {
+    background: var(--text); color: #fff; border-color: var(--text);
+  }
+
+  .admin-day-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  .admin-day-header {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .admin-day-name {
+    font-size: 12px; font-weight: 700;
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 3px;
+  }
+
+  .admin-session-name {
+    font-size: 20px; font-weight: 800; color: var(--text);
+  }
+
+  .admin-ex-row {
+    border-bottom: 1px solid var(--border);
+    padding: 12px 14px;
+  }
+
+  .admin-ex-row:last-child { border-bottom: none; }
+
+  .admin-ex-header {
+    display: flex; align-items: center; gap: 10px;
+  }
+
+  .admin-ex-order {
+    font-size: 14px; font-weight: 700;
+    color: var(--muted); min-width: 22px;
+  }
+
+  .admin-ex-info { flex: 1; min-width: 0; }
+
+  .admin-ex-name {
+    font-size: 16px; font-weight: 700; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .admin-ex-rx {
+    font-size: 13px; color: var(--muted); margin-top: 2px;
+  }
+
+  .admin-ex-actions {
+    display: flex; gap: 4px; flex-shrink: 0;
+  }
+
+  .admin-icon-btn {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    font-size: 14px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .15s;
+  }
+
+  .admin-icon-btn:active { background: var(--border); }
+  .admin-icon-btn.danger { color: #d93025; }
+  .admin-icon-btn.danger:active { background: #fdf0ef; }
+
+  .admin-edit-form {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+
+  .admin-edit-row {
+    display: flex; gap: 8px; margin-bottom: 8px;
+  }
+
+  .admin-add-form {
+    padding: 12px 14px;
+    border-top: 1px solid var(--border);
+  }
+
+  .admin-field {
+    flex: 1; display: flex; flex-direction: column; gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .admin-field-label {
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase; color: var(--muted);
+  }
+
+  .admin-field-input {
+    background: var(--surface2);
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 16px; font-weight: 500;
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    outline: none; width: 100%;
+    -webkit-appearance: none;
+  }
+
+  .admin-field-input:focus { border-color: var(--text); }
+  .search-input {
+    width: 100%;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 17px; font-family: 'Outfit', sans-serif;
+    color: var(--text); outline: none;
+    margin-bottom: 8px;
+  }
+  .search-input::placeholder { color: var(--muted); }
+  .search-input:focus { border-color: var(--border); }
+`;
+
+// ─── EXERCISE ROW ─────────────────────────────────────────────────────────────
+
+function ExerciseRow({ workout, date, phase }) {
+  const exercise = workout.exercises || {};
+  const name = exercise.name || workout.notes || "Exercise";
+
+  const phaseMap = { "Phase 1":"p1","Phase 2 Bridge":"p2b","Phase 2 - Build":"p2","Phase 3 - Peak":"p3","Pre-Race Taper":"taper" };
+  const prefix = phaseMap[phase] || "p1";
+  const sets = workout[`${prefix}_sets`];
+  const reps = workout[`${prefix}_reps`];
+  const load = workout[`${prefix}_load`];
+  const rx = sets && reps ? `${sets} × ${reps}${load ? ` · ${load}` : ""}` : reps || "";
+
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [lastEntry, setLastEntry] = useState(null);
+  const [entryId, setEntryId] = useState(null);
+  const [saved, setSaved] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const saveTimer = useRef(null);
+
+  // Load data only when first opened
+  useEffect(() => {
+    if (!open || loaded) return;
+    Promise.all([
+      fetchTodayEntry(name, date),
+      fetchLastEntry(name, date),
+    ]).then(([today, last]) => {
+      if (today) { setText(today.log_text); setEntryId(today.id); setSaved(true); }
+      if (last) setLastEntry(last);
+      setLoaded(true);
+    }).catch(console.error);
+  }, [open, loaded, name, date]);
+
+  // Reset when date changes
+  useEffect(() => {
+    setOpen(false); setLoaded(false);
+    setText(""); setEntryId(null);
+    setSaved(false); setLastEntry(null);
+  }, [date]);
+
+  const handleChange = (val) => {
+    setText(val);
+    setSaved(false);
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      if (!val.trim()) return;
+      try {
+        if (entryId) {
+          await saveEntry(name, date, val, entryId);
+        } else {
+          const result = await db(`free_logs`, {
+            method: "POST",
+            body: JSON.stringify({ exercise_name: name, log_date: date, log_text: val }),
+          });
+          const row = Array.isArray(result) ? result[0] : result;
+          if (row?.id) setEntryId(row.id);
+        }
+        setSaved(true);
+      } catch(e) { console.error(e); }
+    }, 800);
+  };
+
+  return (
+    <div className={`ex-row${open?" ex-row-open":""}${saved&&text?" ex-row-saved":""}`}>
+      {/* Header — always visible */}
+      <div className="ex-row-header" onClick={() => setOpen(o => !o)}>
+        <div className="ex-row-header-left">
+          <div className="ex-row-name">{name}</div>
+          {rx && <div className="ex-row-rx">{rx}</div>}
+        </div>
+        <div className="ex-row-header-right">
+          {saved && text && <div className="ex-row-check">✓</div>}
+          <div className="ex-row-chevron">{open ? "−" : "+"}</div>
+        </div>
+      </div>
+
+      {/* Expandable body */}
+      {open && (
+        <div className="ex-row-body">
+          {lastEntry && (
+            <div style={{marginBottom:10}}>
+              <div className="ex-last-label">
+                Last time · {new Date(lastEntry.log_date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}
+              </div>
+              <div className="ex-last-text">{lastEntry.log_text}</div>
+            </div>
+          )}
+          <div className="ex-this-label">This time{saved && text ? " ✓" : ""}</div>
+          <textarea
+            className={`ex-textarea${saved && text ? " saved" : ""}`}
+            placeholder="e.g. Set 1: 10 / Set 2: 8 / Set 3: 7"
+            value={text}
+            onChange={e => handleChange(e.target.value)}
+            rows={2}
+            autoFocus
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ADD EXERCISE ─────────────────────────────────────────────────────────────
+
+function AddExercise({ date, onAdded }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      await db(`free_logs`, {
+        method: "POST",
+        body: JSON.stringify({ exercise_name: name.trim(), log_date: date, log_text: text.trim() }),
+      });
+      setName(""); setText(""); setOpen(false);
+      onAdded();
+    } catch(e) { console.error(e); }
+    setSaving(false);
+  };
+
+  if (!open) return (
+    <button className="add-ex-btn" onClick={() => setOpen(true)}>
+      + Add exercise
+    </button>
+  );
+
+  return (
+    <div className="add-ex-form">
+      <input
+        className="add-ex-input"
+        placeholder="Exercise name"
+        value={name}
+        onChange={e => setName(e.target.value)}
+        autoFocus
+      />
+      <textarea
+        className="ex-textarea"
+        placeholder="Results..."
+        value={text}
+        onChange={e => setText(e.target.value)}
+        rows={2}
+      />
+      <div className="add-ex-actions">
+        <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
+        <button className="btn btn-primary" onClick={handleSave} disabled={saving || !name.trim()}>
+          {saving ? "Saving..." : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── TODAY TAB ────────────────────────────────────────────────────────────────
+
+function TodayTab({ selectedDate, todayStr, phase }) {
+  const dayName = DAY_NAMES[selectedDate.getDay()];
+  const dateStr = toDateStr(selectedDate);
+  const [workouts, setWorkouts] = useState([]);
+  const [extraLogs, setExtraLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      fetchWorkoutsForDay(dayName),
+      db(`free_logs?log_date=eq.${dateStr}&select=*&order=created_at.asc`).catch(() => []),
+    ]).then(([w, logs]) => {
+      setWorkouts(w);
+      // Only show logs for exercises NOT already in the workout plan
+      const planNames = new Set(w.map(workout => workout.exercises?.name || workout.notes || ""));
+      setExtraLogs((logs || []).filter(l => !planNames.has(l.exercise_name)));
+    }).catch(console.error).finally(() => setLoading(false));
+  }, [dayName, dateStr, refresh]);
+
+  const sections = [...new Set(workouts.map(w => w.section || "Main Work"))];
+  const sectionOrder = ["Pre-Session Mobility","Warm-Up","Main Work","Accessory","Finisher","Post-Session"];
+  sections.sort((a,b) => sectionOrder.indexOf(a) - sectionOrder.indexOf(b));
+
+  return (
+    <>
+      {workouts.length > 0 && (
+        <div className="session-header">
+          <div className="session-day-label">
+            {selectedDate.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}
+          </div>
+          <div className="session-name">{workouts[0]?.session_name || dayName}</div>
+          <div className="session-count">{workouts.length} exercises · {phase}</div>
+        </div>
+      )}
+
+      <div className="content">
+        {loading && <div className="center-msg"><div className="spinner"/><div className="center-sub">Loading...</div></div>}
+
+        {!loading && workouts.length === 0 && extraLogs.length === 0 && (
+          <div className="center-msg">
+            <div className="center-icon">🌿</div>
+            <div className="center-title">Rest Day</div>
+            <div className="center-sub">No session scheduled.<br/>Rest, recover, come back stronger.</div>
+          </div>
+        )}
+
+        {!loading && sections.map(section => (
+          <div key={section}>
+            <div className="section-label">{section}</div>
+            {workouts.filter(w => (w.section||"Main Work") === section).map(w => (
+              <ExerciseRow key={w.id} workout={w} date={dateStr} phase={phase}/>
+            ))}
+          </div>
+        ))}
+
+        {!loading && extraLogs.length > 0 && (
+          <div>
+            <div className="section-label">Added Today</div>
+            {extraLogs.map(log => (
+              <div className="ex-row" key={log.id}>
+                <div className="ex-row-name">{log.exercise_name}</div>
+                <div className="ex-this-label">Results</div>
+                <div style={{fontSize:17, color:"var(--text)", fontWeight:500, lineHeight:1.5, padding:"4px 0"}}>
+                  {log.log_text}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!loading && (
+          <AddExercise date={dateStr} onAdded={() => setRefresh(r => r+1)}/>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ─── HISTORY TAB ─────────────────────────────────────────────────────────────
+
+function HistoryTab() {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    fetchRecentLogs(300).then(setLogs).catch(console.error).finally(() => setLoading(false));
+  }, []);
+
+  const filtered = search
+    ? logs.filter(l => l.exercise_name.toLowerCase().includes(search.toLowerCase()))
+    : logs;
+
+  // Group by date
+  const byDate = {};
+  for (const l of filtered) {
+    if (!byDate[l.log_date]) byDate[l.log_date] = [];
+    byDate[l.log_date].push(l);
+  }
+  const dates = Object.keys(byDate).sort((a,b) => b.localeCompare(a));
+
+  return (
+    <div className="content" style={{paddingTop:12}}>
+      <input
+        className="search-input"
+        placeholder="Search exercises..."
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+      />
+      {loading && <div className="center-msg"><div className="spinner"/></div>}
+      {!loading && dates.length === 0 && (
+        <div className="center-msg">
+          <div className="center-icon">📋</div>
+          <div className="center-title">No history yet</div>
+          <div className="center-sub">Log your first workout to see it here.</div>
+        </div>
+      )}
+      {dates.map(date => (
+        <div className="hist-date-group" key={date}>
+          <div className="hist-date-label">
+            {new Date(date+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"})}
+          </div>
+          {byDate[date].map(l => (
+            <div className="hist-entry" key={l.id}>
+              <div className="hist-entry-name">{l.exercise_name}</div>
+              <div className="hist-entry-text">{l.log_text}</div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── RACES TAB ────────────────────────────────────────────────────────────────
+
+function RacesTab() {
+  const [races, setRaces] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchRaces().then(setRaces).catch(console.error).finally(() => setLoading(false));
+  }, []);
+
+  const upcoming = races.filter(r => daysUntil(r.race_date) > 0).sort((a,b) => new Date(a.race_date)-new Date(b.race_date));
+  const past = races.filter(r => daysUntil(r.race_date) <= 0).sort((a,b) => new Date(b.race_date)-new Date(a.race_date));
+
+  const pillClass = t => t==="anchor"?"pill-anchor":t==="target"?"pill-target":"pill-training";
+  const pillLabel = t => t==="anchor"?"A Race":t==="target"?"B Race":"Training";
+
+  return (
+    <div className="content" style={{paddingTop:12}}>
+      {loading && <div className="center-msg"><div className="spinner"/></div>}
+      {upcoming.length > 0 && <>
+        <div className="section-label">Upcoming</div>
+        {upcoming.map(r => (
+          <div className="race-card" key={r.id}>
+            <div>
+              <div className="race-name">{r.name}</div>
+              <div className="race-meta">
+                {new Date(r.race_date+"T12:00:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}
+                {r.distance_miles ? ` · ${r.distance_miles} mi` : ""}
+              </div>
+              <div className={`race-type-pill ${pillClass(r.race_type)}`}>{pillLabel(r.race_type)}</div>
+            </div>
+            <div className="race-countdown">
+              <div className="race-days">{daysUntil(r.race_date)}</div>
+              <div className="race-days-label">days out</div>
+            </div>
+          </div>
+        ))}
+      </>}
+      {past.length > 0 && <>
+        <div className="section-label" style={{marginTop:8}}>Past</div>
+        {past.map(r => (
+          <div className="race-card" key={r.id} style={{opacity:.55}}>
+            <div>
+              <div className="race-name">{r.name}</div>
+              <div className="race-meta">
+                {new Date(r.race_date+"T12:00:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}
+                {r.distance_miles ? ` · ${r.distance_miles} mi` : ""}
+              </div>
+              <div className={`race-type-pill ${pillClass(r.race_type)}`}>{pillLabel(r.race_type)}</div>
+            </div>
+          </div>
+        ))}
+      </>}
+    </div>
+  );
+}
+
+// ─── ADMIN HELPERS ───────────────────────────────────────────────────────────
+
+const DAY_ORDER = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+
+async function fetchAllWorkouts() {
+  return await db(`workouts?select=*,exercises(name)&order=day_of_week.asc,order_in_session.asc`) || [];
+}
+
+async function updateWorkoutField(id, field, value) {
+  return db(`workouts?id=eq.${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ [field]: value }),
+    prefer: "return=minimal",
+  });
+}
+
+async function moveExercise(id, direction, allForDay) {
+  const idx = allForDay.findIndex(w => w.id === id);
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= allForDay.length) return;
+  const a = allForDay[idx];
+  const b = allForDay[swapIdx];
+  await Promise.all([
+    db(`workouts?id=eq.${a.id}`, { method:"PATCH", body:JSON.stringify({order_in_session:b.order_in_session}), prefer:"return=minimal" }),
+    db(`workouts?id=eq.${b.id}`, { method:"PATCH", body:JSON.stringify({order_in_session:a.order_in_session}), prefer:"return=minimal" }),
+  ]);
+}
+
+async function deleteWorkout(id) {
+  return db(`workouts?id=eq.${id}`, { method:"DELETE", prefer:"return=minimal" });
+}
+
+async function fetchAllExercises() {
+  return await db(`exercises?select=id,name&order=name.asc`) || [];
+}
+
+async function addWorkoutRow(dayOfWeek, exerciseId, sessionName, section, order) {
+  return db(`workouts`, {
+    method: "POST",
+    body: JSON.stringify({
+      day_of_week: dayOfWeek,
+      session_name: sessionName,
+      section: section || "Main Work",
+      exercise_id: exerciseId,
+      order_in_session: order,
+      p1_sets: null, p1_reps: null, p1_load: null,
+    }),
+  });
+}
+
+// ─── ADMIN TAB ────────────────────────────────────────────────────────────────
+
+function AdminExerciseRow({ workout, allForDay, onRefresh }) {
+  const [editing, setEditing] = useState(false);
+  const [rx, setRx] = useState(workout.p1_reps || "");
+  const [load, setLoad] = useState(workout.p1_load || "");
+  const [sets, setSets] = useState(workout.p1_sets ? String(workout.p1_sets) : "");
+  const [saving, setSaving] = useState(false);
+
+  const name = workout.exercises?.name || workout.notes || "Unknown";
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await Promise.all([
+        updateWorkoutField(workout.id, "p1_sets", sets ? parseInt(sets) : null),
+        updateWorkoutField(workout.id, "p1_reps", rx || null),
+        updateWorkoutField(workout.id, "p1_load", load || null),
+      ]);
+      setEditing(false);
+      onRefresh();
+    } catch(e) { console.error(e); }
+    setSaving(false);
+  };
+
+  const handleDelete = async () => {
+    if (!confirm(`Remove "${name}" from this session?`)) return;
+    try {
+      await deleteWorkout(workout.id);
+      onRefresh();
+    } catch(e) { console.error(e); }
+  };
+
+  const handleMove = async (dir) => {
+    try {
+      await moveExercise(workout.id, dir, allForDay);
+      onRefresh();
+    } catch(e) { console.error(e); }
+  };
+
+  return (
+    <div className="admin-ex-row">
+      <div className="admin-ex-header">
+        <div className="admin-ex-order">{workout.order_in_session}</div>
+        <div className="admin-ex-info">
+          <div className="admin-ex-name">{name}</div>
+          <div className="admin-ex-rx">
+            {[sets&&`${sets}×`, rx, load&&`@ ${load}`].filter(Boolean).join(" ") || "No prescription"}
+          </div>
+        </div>
+        <div className="admin-ex-actions">
+          <button className="admin-icon-btn" onClick={() => handleMove("up")}>↑</button>
+          <button className="admin-icon-btn" onClick={() => handleMove("down")}>↓</button>
+          <button className="admin-icon-btn" onClick={() => setEditing(e => !e)}>✏️</button>
+          <button className="admin-icon-btn danger" onClick={handleDelete}>✕</button>
+        </div>
+      </div>
+
+      {editing && (
+        <div className="admin-edit-form">
+          <div className="admin-edit-row">
+            <div className="admin-field">
+              <div className="admin-field-label">Sets</div>
+              <input className="admin-field-input" type="number" value={sets} onChange={e=>setSets(e.target.value)} placeholder="3"/>
+            </div>
+            <div className="admin-field" style={{flex:2}}>
+              <div className="admin-field-label">Reps / Duration</div>
+              <input className="admin-field-input" type="text" value={rx} onChange={e=>setRx(e.target.value)} placeholder="e.g. 8 or 60s"/>
+            </div>
+          </div>
+          <div className="admin-field">
+            <div className="admin-field-label">Load</div>
+            <input className="admin-field-input" type="text" value={load} onChange={e=>setLoad(e.target.value)} placeholder="e.g. 45 lb KB or BW"/>
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:8}}>
+            <button className="btn btn-ghost" style={{flex:1,padding:"10px",fontSize:15}} onClick={()=>setEditing(false)}>Cancel</button>
+            <button className="btn btn-primary" style={{flex:2,padding:"10px",fontSize:15}} onClick={handleSave} disabled={saving}>
+              {saving?"Saving...":"Save"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminDayPanel({ day, workouts, exercises, onRefresh }) {
+  const [addOpen, setAddOpen] = useState(false);
+  const [selectedEx, setSelectedEx] = useState("");
+  const [addSection, setAddSection] = useState("Main Work");
+  const [adding, setAdding] = useState(false);
+
+  const sessionName = workouts[0]?.session_name || day;
+  const nextOrder = workouts.length > 0 ? Math.max(...workouts.map(w => w.order_in_session)) + 1 : 1;
+
+  const handleAdd = async () => {
+    if (!selectedEx) return;
+    setAdding(true);
+    try {
+      await addWorkoutRow(day, selectedEx, sessionName, addSection, nextOrder);
+      setAddOpen(false);
+      setSelectedEx("");
+      onRefresh();
+    } catch(e) { console.error(e); }
+    setAdding(false);
+  };
+
+  return (
+    <div className="admin-day-panel">
+      <div className="admin-day-header">
+        <div className="admin-day-name">{day}</div>
+        <div className="admin-session-name">{sessionName}</div>
+      </div>
+
+      {workouts.map(w => (
+        <AdminExerciseRow key={w.id} workout={w} allForDay={workouts} onRefresh={onRefresh}/>
+      ))}
+
+      {!addOpen ? (
+        <button className="add-ex-btn" style={{marginTop:6}} onClick={() => setAddOpen(true)}>
+          + Add exercise
+        </button>
+      ) : (
+        <div className="admin-add-form">
+          <div className="admin-field">
+            <div className="admin-field-label">Exercise</div>
+            <select className="admin-field-input" value={selectedEx} onChange={e=>setSelectedEx(e.target.value)}>
+              <option value="">Select exercise...</option>
+              {exercises.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+          </div>
+          <div className="admin-field">
+            <div className="admin-field-label">Section</div>
+            <select className="admin-field-input" value={addSection} onChange={e=>setAddSection(e.target.value)}>
+              {["Pre-Session Mobility","Warm-Up","Main Work","Accessory","Finisher","Post-Session"].map(s =>
+                <option key={s}>{s}</option>
+              )}
+            </select>
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:8}}>
+            <button className="btn btn-ghost" style={{flex:1,padding:"10px",fontSize:15}} onClick={()=>setAddOpen(false)}>Cancel</button>
+            <button className="btn btn-primary" style={{flex:2,padding:"10px",fontSize:15}} onClick={handleAdd} disabled={adding||!selectedEx}>
+              {adding?"Adding...":"Add"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminTab() {
+  const [workouts, setWorkouts] = useState([]);
+  const [exercises, setExercises] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeDay, setActiveDay] = useState("Monday");
+
+  const load = () => {
+    setLoading(true);
+    Promise.all([fetchAllWorkouts(), fetchAllExercises()])
+      .then(([w, e]) => { setWorkouts(w); setExercises(e); })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const days = [...new Set(workouts.map(w => w.day_of_week))].sort((a,b) =>
+    DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b)
+  );
+
+  const dayWorkouts = workouts
+    .filter(w => w.day_of_week === activeDay)
+    .sort((a,b) => a.order_in_session - b.order_in_session);
+
+  return (
+    <div className="content" style={{paddingTop:12}}>
+      {loading && <div className="center-msg"><div className="spinner"/><div className="center-sub">Loading plan...</div></div>}
+
+      {!loading && <>
+        {/* Day picker */}
+        <div className="admin-day-pills">
+          {days.map(d => (
+            <button key={d}
+              className={`admin-day-pill${activeDay===d?" active":""}`}
+              onClick={() => setActiveDay(d)}>
+              {d.slice(0,3)}
+            </button>
+          ))}
+        </div>
+
+        <AdminDayPanel
+          day={activeDay}
+          workouts={dayWorkouts}
+          exercises={exercises}
+          onRefresh={load}
+        />
+      </>}
+    </div>
+  );
+}
+
+function App() {
+  const today = new Date();
+  const todayStr = toDateStr(today);
+
+  const [tab, setTab] = useState("today");
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [weekOffset, setWeekOffset] = useState(0);
+  const phase = "Phase 1";
+
+  const anchor = new Date(today);
+  anchor.setDate(today.getDate() + weekOffset * 7);
+  const weekDates = getWeekDates(anchor);
+
+  const weekLabel = weekOffset===0?"This Week":weekOffset===-1?"Last Week":weekOffset===1?"Next Week":
+    weekDates[0].toLocaleDateString("en-US",{month:"short",day:"numeric"});
+
+  const TABS = [
+    {id:"today", icon:"🏋️", label:"Today"},
+    {id:"history", icon:"📋", label:"History"},
+    {id:"races", icon:"🏁", label:"Races"},
+    {id:"admin", icon:"⚙️", label:"Plan"},
+  ];
+
+  return (
+    <>
+      <style>{css}</style>
+      <div className="app">
+        {/* WEEK STRIP */}
+        <div className="week-strip">
+          <div className="week-strip-top">
+            <div className="week-label">{weekLabel}</div>
+            <div className="week-nav">
+              <button className="week-nav-btn" onClick={() => setWeekOffset(o => o-1)}>‹</button>
+              <button className="week-nav-btn" onClick={() => setWeekOffset(o => o+1)}>›</button>
+            </div>
+          </div>
+          <div className="days-row">
+            {weekDates.map((date, i) => {
+              const dStr = toDateStr(date);
+              const isToday = dStr === todayStr;
+              const isSel = dStr === toDateStr(selectedDate);
+              return (
+                <button key={i}
+                  className={`day-btn${isToday?" today":""}${isSel?" selected":""}`}
+                  onClick={() => { setSelectedDate(date); setTab("today"); }}>
+                  <div className="day-name">{DAY_SHORT[date.getDay()]}</div>
+                  <div className="day-num">{date.getDate()}</div>
+                  {isSel && <div className="day-active-bar"/>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* CONTENT */}
+        {tab==="today" && <TodayTab selectedDate={selectedDate} todayStr={todayStr} phase={phase}/>}
+        {tab==="history" && <HistoryTab/>}
+        {tab==="races" && <RacesTab/>}
+        {tab==="admin" && <AdminTab/>}
+
+        {/* BOTTOM NAV */}
+        <div className="bottom-nav">
+          {TABS.map(({id,icon,label}) => (
+            <button key={id}
+              className={`nav-item${tab===id?" active":""}`}
+              onClick={() => setTab(id)}>
+              <span className="nav-icon">{icon}</span>
+              <span className="nav-label">{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+  </script>
+</body>
+</html>
