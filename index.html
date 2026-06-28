@@ -1297,6 +1297,7 @@ function AdminExerciseRow({ workout, allForDay, onRefresh }) {
   const [rx, setRx] = useState(workout.p1_reps || "");
   const [load, setLoad] = useState(workout.p1_load || "");
   const [sets, setSets] = useState(workout.p1_sets ? String(workout.p1_sets) : "");
+  const [section, setSection] = useState(workout.section || "Main Session");
   const [saving, setSaving] = useState(false);
 
   const name = workout.exercises?.name || workout.notes || "Unknown";
@@ -1308,6 +1309,7 @@ function AdminExerciseRow({ workout, allForDay, onRefresh }) {
         updateWorkoutField(workout.id, "p1_sets", sets ? parseInt(sets) : null),
         updateWorkoutField(workout.id, "p1_reps", rx || null),
         updateWorkoutField(workout.id, "p1_load", load || null),
+        updateWorkoutField(workout.id, "section", section),
       ]);
       setEditing(false);
       onRefresh();
@@ -1337,6 +1339,11 @@ function AdminExerciseRow({ workout, allForDay, onRefresh }) {
         <div className="admin-ex-info">
           <div className="admin-ex-name">{name}</div>
           <div className="admin-ex-rx">
+            <span style={{
+              fontSize:11, fontWeight:700, letterSpacing:".5px",
+              textTransform:"uppercase", color:"var(--muted)",
+              marginRight:6
+            }}>{section}</span>
             {[sets&&`${sets}×`, rx, load&&`@ ${load}`].filter(Boolean).join(" ") || "No prescription"}
           </div>
         </div>
@@ -1350,6 +1357,14 @@ function AdminExerciseRow({ workout, allForDay, onRefresh }) {
 
       {editing && (
         <div className="admin-edit-form">
+          <div className="admin-field">
+            <div className="admin-field-label">Section</div>
+            <select className="admin-field-input" value={section} onChange={e=>setSection(e.target.value)}>
+              {["Warm-Up","Main Session","Finisher","Recovery"].map(s =>
+                <option key={s}>{s}</option>
+              )}
+            </select>
+          </div>
           <div className="admin-edit-row">
             <div className="admin-field">
               <div className="admin-field-label">Sets</div>
