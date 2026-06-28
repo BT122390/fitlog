@@ -1041,14 +1041,32 @@ function TodayTab({ selectedDate, todayStr, phase }) {
     ]).then(([w, logs]) => {
       setWorkouts(w);
       // Only show logs for exercises NOT already in the workout plan
-      const planNames = new Set(w.map(workout => workout.exercises?.name || workout.notes || ""));
+      const planNames = new Set(w.map(workout => workout.exercises?.name || ""));
       setExtraLogs((logs || []).filter(l => !planNames.has(l.exercise_name)));
     }).catch(console.error).finally(() => setLoading(false));
   }, [dayName, dateStr, refresh]);
 
-  const sections = [...new Set(workouts.map(w => w.section || "Main Session"))];
+  // Build a section lookup from plan exercises
+  const sectionByName = {};
+  workouts.forEach(w => {
+    if (w.exercises?.name) sectionByName[w.exercises.name] = w.section || "Main Session";
+  });
+
+  // Merge extraLogs into sections — use plan section if name matches, else Main Session
+  const allSections = [...new Set([
+    ...workouts.map(w => w.section || "Main Session"),
+    ...extraLogs.map(l => sectionByName[l.exercise_name] || "Main Session")
+  ])];
   const sectionOrder = ["Warm-Up", "Main Session", "Finisher", "Recovery"];
-  sections.sort((a,b) => sectionOrder.indexOf(a) - sectionOrder.indexOf(b));
+  allSections.sort((a,b) => sectionOrder.indexOf(a) - sectionOrder.indexOf(b));
+
+  // Group extraLogs by section
+  const extraLogsBySection = {};
+  extraLogs.forEach(l => {
+    const sec = sectionByName[l.exercise_name] || "Main Session";
+    if (!extraLogsBySection[sec]) extraLogsBySection[sec] = [];
+    extraLogsBySection[sec].push(l);
+  });
 
   return (
     <>
@@ -1073,28 +1091,27 @@ function TodayTab({ selectedDate, todayStr, phase }) {
           </div>
         )}
 
-        {!loading && sections.map(section => (
-          <div key={section}>
-            <div className="section-label">{section}</div>
-            {workouts.filter(w => (w.section||"Main Session") === section).map(w => (
-              <ExerciseRow key={w.id} workout={w} date={dateStr} phase={phase}/>
-            ))}
-          </div>
-        ))}
-
-        {!loading && extraLogs.length > 0 && (
-          <div>
-            <div className="section-label">Added Today</div>
-            {extraLogs.map(log => (
-              <ExerciseRow
-                key={log.exercise_name}
-                workout={{ id: log.id, exercises: { name: log.exercise_name }, notes: log.exercise_name, section: "Main Session" }}
-                date={dateStr}
-                phase={phase}
-              />
-            ))}
-          </div>
-        )}
+        {!loading && allSections.map(section => {
+          const planExercises = workouts.filter(w => (w.section||"Main Session") === section);
+          const addedExercises = extraLogsBySection[section] || [];
+          if (planExercises.length === 0 && addedExercises.length === 0) return null;
+          return (
+            <div key={section}>
+              <div className="section-label">{section}</div>
+              {planExercises.map(w => (
+                <ExerciseRow key={w.id} workout={w} date={dateStr} phase={phase}/>
+              ))}
+              {addedExercises.map(log => (
+                <ExerciseRow
+                  key={log.exercise_name}
+                  workout={{ id: log.id, exercises: { name: log.exercise_name }, notes: log.exercise_name, section }}
+                  date={dateStr}
+                  phase={phase}
+                />
+              ))}
+            </div>
+          );
+        })}
 
         {!loading && (
           <AddExercise date={dateStr} onAdded={() => setRefresh(r => r+1)}/>
