@@ -326,16 +326,23 @@ const css = `
   }
 
   .ex-designator {
-    display: inline-block;
-    font-size: 11px; font-weight: 800;
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800;
     letter-spacing: .5px;
     color: var(--muted);
     background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    padding: 1px 6px;
-    margin-right: 7px;
+    border: 2px solid #d93025;
+    border-radius: 7px;
+    padding: 3px 7px;
     flex-shrink: 0;
+    min-width: 42px;
+    transition: border-color .2s, color .2s;
+  }
+
+  .ex-designator.completed {
+    border-color: var(--green);
+    color: var(--green);
   }
 
   .ex-last-time {
@@ -686,7 +693,9 @@ const css = `
 function ExerciseRow({ workout, date, phase }) {
   const exercise = workout.exercises || {};
   const name = exercise.name || workout.notes || "Exercise";
-  const designator = makeDesignator(workout.day_of_week, workout.order_in_session);
+  const planId = workout.order_in_session != null
+    ? String(workout.order_in_session).padStart(3, "0")
+    : null;
 
   const phaseMap = { "Phase 1":"p1","Phase 2 Bridge":"p2b","Phase 2 - Build":"p2","Phase 3 - Peak":"p3","Pre-Race Taper":"taper" };
   const prefix = phaseMap[phase] || "p1";
@@ -765,15 +774,17 @@ function ExerciseRow({ workout, date, phase }) {
       {/* Header — always visible */}
       <div className="ex-row-header" onClick={() => setOpen(o => !o)}>
         <div className="ex-row-header-left">
-          <div className="ex-row-name" style={{display:"flex",alignItems:"center"}}>
-            {designator && <span className="ex-designator">{designator}</span>}
+          <div className="ex-row-name">
             <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</span>
           </div>
           {rx && <div className="ex-row-rx">{rx}</div>}
         </div>
         <div className="ex-row-header-right">
-          {saved && text && <div className="ex-row-check">✓</div>}
-          <div className="ex-row-chevron">{open ? "−" : "+"}</div>
+          {planId && (
+            <span className={`ex-designator${saved && text ? " completed" : ""}`}>
+              {planId}
+            </span>
+          )}
         </div>
       </div>
 
@@ -815,16 +826,40 @@ function ExerciseRow({ workout, date, phase }) {
 
 // ─── ADD EXERCISE ─────────────────────────────────────────────────────────────
 
+async function fetchHistoryPreview(exerciseName) {
+  if (!exerciseName.trim()) return [];
+  const results = await db(
+    `free_logs?exercise_name=ilike.${encodeURIComponent("*" + exerciseName.trim() + "*")}&log_text=neq.&order=log_date.desc&limit=3&select=exercise_name,log_date,log_text`
+  );
+  return results || [];
+}
+
 function AddExercise({ date, onAdded }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [histLoading, setHistLoading] = useState(false);
+  const debounceRef = useRef(null);
+
+  // Debounce history lookup as user types
+  useEffect(() => {
+    if (!name.trim() || name.trim().length < 2) { setHistory([]); return; }
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setHistLoading(true);
+      fetchHistoryPreview(name)
+        .then(setHistory)
+        .catch(() => setHistory([]))
+        .finally(() => setHistLoading(false));
+    }, 350);
+    return () => clearTimeout(debounceRef.current);
+  }, [name]);
 
   const handleAdd = async () => {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      // Create a placeholder entry so the exercise appears in the list
       await db(`free_logs`, {
         method: "POST",
         body: JSON.stringify({
@@ -833,10 +868,14 @@ function AddExercise({ date, onAdded }) {
           log_text: "",
         }),
       });
-      setName(""); setOpen(false);
+      setName(""); setHistory([]); setOpen(false);
       onAdded();
     } catch(e) { console.error(e); }
     setSaving(false);
+  };
+
+  const handleSelectHistory = (exerciseName) => {
+    setName(exerciseName);
   };
 
   if (!open) return (
@@ -855,8 +894,71 @@ function AddExercise({ date, onAdded }) {
         onKeyDown={e => e.key === "Enter" && handleAdd()}
         autoFocus
       />
+
+      {/* History preview */}
+      {name.trim().length >= 2 && (
+        <div style={{marginTop: 2, marginBottom: 2}}>
+          {histLoading && (
+            <div style={{fontSize:13, color:"var(--muted)", padding:"6px 2px"}}>Checking history…</div>
+          )}
+          {!histLoading && history.length === 0 && (
+            <div style={{
+              fontSize:13, color:"var(--muted)",
+              padding:"6px 2px", display:"flex", alignItems:"center", gap:6
+            }}>
+              <span style={{opacity:.5}}>○</span> No prior history found
+            </div>
+          )}
+          {!histLoading && history.length > 0 && (
+            <div style={{
+              background:"var(--green-bg)",
+              border:"1px solid var(--green-border)",
+              borderRadius:9, overflow:"hidden",
+              marginTop:4
+            }}>
+              <div style={{
+                fontSize:11, fontWeight:700, letterSpacing:"1px",
+                textTransform:"uppercase", color:"var(--green)",
+                padding:"8px 12px 4px"
+              }}>
+                {history.length} prior {history.length === 1 ? "entry" : "entries"} found
+              </div>
+              {history.map((h, i) => (
+                <div
+                  key={i}
+                  onClick={() => handleSelectHistory(h.exercise_name)}
+                  style={{
+                    padding:"7px 12px 9px",
+                    borderTop: i > 0 ? "1px solid var(--green-border)" : "none",
+                    cursor:"pointer"
+                  }}
+                >
+                  <div style={{
+                    display:"flex", alignItems:"center",
+                    justifyContent:"space-between", marginBottom:2
+                  }}>
+                    <div style={{fontSize:14, fontWeight:700, color:"var(--text)"}}>
+                      {h.exercise_name}
+                    </div>
+                    <div style={{fontSize:12, color:"var(--muted)", flexShrink:0, marginLeft:8}}>
+                      {new Date(h.log_date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"})}
+                    </div>
+                  </div>
+                  <div style={{
+                    fontSize:13, color:"var(--text2)",
+                    whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"
+                  }}>
+                    {h.log_text}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="add-ex-actions">
-        <button className="btn btn-ghost" onClick={() => { setOpen(false); setName(""); }}>Cancel</button>
+        <button className="btn btn-ghost" onClick={() => { setOpen(false); setName(""); setHistory([]); }}>Cancel</button>
         <button className="btn btn-primary" onClick={handleAdd} disabled={saving || !name.trim()}>
           {saving ? "Adding..." : "Add"}
         </button>
