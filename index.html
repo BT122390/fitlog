@@ -78,13 +78,24 @@ function daysUntil(dateStr) {
 // ─── SUPABASE ────────────────────────────────────────────────────────────────
 
 async function fetchWorkoutsForDay(dayName) {
-  // Get session_id for this day first
-  const sessions = await db(`sessions?day_of_week=eq.${dayName}&select=id&limit=1`);
-  if (!sessions || sessions.length === 0) return [];
-  const sessionId = sessions[0].id;
-  return await db(
-    `workouts?session_id=eq.${sessionId}&select=*,exercises(name,coaching_notes),sessions(day_of_week,session_name)&order=order_in_session.asc`
-  ) || [];
+  try {
+    const sessions = await db(`sessions?day_of_week=eq.${dayName}&select=id&limit=1`);
+    console.log("sessions result:", sessions);
+    if (!sessions || sessions.length === 0) {
+      console.log("No session found for day:", dayName);
+      return [];
+    }
+    const sessionId = sessions[0].id;
+    console.log("session_id:", sessionId);
+    const workouts = await db(
+      `workouts?session_id=eq.${sessionId}&select=*,exercises(name,coaching_notes),sessions(day_of_week,session_name)&order=order_in_session.asc`
+    );
+    console.log("workouts result:", workouts);
+    return workouts || [];
+  } catch(e) {
+    console.error("fetchWorkoutsForDay error:", e);
+    return [];
+  }
 }
 
 async function fetchLastEntry(exerciseName, beforeDate) {
