@@ -121,25 +121,16 @@ async function deleteScheduleRow(id) {
 }
 
 async function moveScheduleRow(id, direction, allForDay) {
-  const idx = allForDay.findIndex(w => w.id === id);
-  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  const idx = allForDay.findIndex(function(w) { return w.id === id; });
+  const swapIdx = direction==="up" ? idx-1 : idx+1;
   if (swapIdx < 0 || swapIdx >= allForDay.length) return;
-
-  // Reorder the array
-  const reordered = [...allForDay];
-  const [moved] = reordered.splice(idx, 1);
+  const reordered = allForDay.slice();
+  const moved = reordered.splice(idx, 1)[0];
   reordered.splice(swapIdx, 0, moved);
-
-  // Assign clean sequential order_in_session values (1, 2, 3...)
-  await Promise.all(
-    reordered.map((row, i) =>
-      db(`schedule?id=eq.${row.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ order_in_session: i + 1 }),
-        prefer: "return=minimal",
-      })
-    )
-  );
+  const updates = reordered.map(function(row, i) {
+    return db("schedule?id=eq."+row.id, {method:"PATCH", body:JSON.stringify({order_in_session:i+1}), prefer:"return=minimal"});
+  });
+  await Promise.all(updates);
 }
 
 async function addScheduleRow(dayOfWeek, exerciseId, section, order, prescription) {
